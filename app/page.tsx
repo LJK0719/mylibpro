@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BookCard } from "@/components/BookCard";
-import { Heart, BookOpen, BookCheck, BookMarked, Library, Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Heart, BookOpen, BookCheck, BookMarked, Library, Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
 
 interface DocumentView {
   document_id: string;
@@ -75,6 +75,7 @@ export default function HomePage() {
   const [showNewShelfForm, setShowNewShelfForm] = useState(false);
   const [editingShelfId, setEditingShelfId] = useState<string | null>(null);
   const [editingShelfDesc, setEditingShelfDesc] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   const pageSize = viewMode === "cover" ? 8 : viewMode === "list" ? 15 : 12;
 
@@ -204,6 +205,26 @@ export default function HomePage() {
     await fetchShelves();
   };
 
+  const handleSync = async () => {
+    if (!confirm("即将扫描全部底层数据并更新数据库索引，确认同步吗？")) return;
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/sync", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        await fetchDocuments();
+        await fetchShelves();
+      } else {
+        alert("同步失败: " + data.error);
+      }
+    } catch (e) {
+      alert("同步出错");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const quickFilterItems: { key: QuickFilter; label: string; icon: React.ReactNode }[] = [
     { key: "favorite", label: "我的收藏", icon: <Heart className="w-3.5 h-3.5" /> },
     { key: "reading",  label: "在读",     icon: <BookOpen className="w-3.5 h-3.5" /> },
@@ -222,6 +243,10 @@ export default function HomePage() {
               {total} 部文献 · {filtersData?.disciplines.length ?? 0} 个学科 · {filtersData?.yearRange ? `${filtersData.yearRange.min}–${filtersData.yearRange.max}` : ""}
             </p>
           </div>
+          <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "同步中..." : "一键更新文献库"}
+          </Button>
         </div>
       </div>
 
