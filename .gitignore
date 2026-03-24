@@ -42,3 +42,7 @@ next-env.d.ts
 
 # data
 /data
+libdata/
+db/*.db
+db/*.db-shm
+db/*.db-wal
