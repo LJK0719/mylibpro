@@ -1,39 +1,51 @@
-# 飞牛 OS (fnOS) Docker 部署 MyLibPro 指南
+# 飞牛 OS (fnOS) Docker 部署指南 (基于 GitHub 容器库)
 
-由于你的大模型数据（`libdata`）已经在飞牛 NAS 上的某个指定文件夹中，并且你的代码上传到了 GitHub。飞牛 OS 自带可视化 Docker 管理功能，使用 `docker-compose.yml` 部署非常简单。
+既然你在飞牛 OS 中只看到了“从 URL 添加镜像”的选项（没有进入终端部署的入口），那么最顺畅的方法就是让 GitHub 服务器来帮你打包镜像，飞牛 OS 直接下载成品即可。
 
-## 第一步：准备代码和配置
+我已经为你配置了 **GitHub Actions**（位于 `.github/workflows/docker-publish.yml`）。只要你把代码推送到 GitHub，它就会自动在云端帮你打包出 Docker 镜像，并发布到 GitHub 的官方容器库（ghcr.io）。
 
-1. 确保你已经在 GitHub 仓库中提交了最新的代码，其中包含了我刚刚创建的：
-   - `Dockerfile`
-   - `.dockerignore`
-   - `docker-compose.yml`
-   - `next.config.ts`
+## 第一步：触发云端打包推送代码
 
-2. 编辑（或在飞牛OS中确认编辑）`docker-compose.yml`：
-   > **关键修改**：打开 `docker-compose.yml`，找到 `volumes:` 的部分。这里必须将冒号前面的路径改为你飞牛 NAS 上真实的**绝对路径**。
-   - 例：你的 NAS 数据目录是 `/vol1/1000/MyData/libdata`，那么这里就写 `/vol1/1000/MyData/libdata:/app/libdata`。
-   - 同时为数据库 `db` 找一个存储位置映射给 `/app/db`。
-   - **千万别忘了**修改 `GEMINI_API_KEY` 为你自己的真实 API Key。
+在你的本地命令行执行以下操作，将我刚才写的自动打包脚本推送到 GitHub 仓库：
+```bash
+git add .
+git commit -m "feat: 添加 GitHub Actions 自动构建 Docker 镜像"
+git push origin master
+```
+推送上去后，打开你 GitHub 仓库的 **Actions** 标签页，你会看到一个名为 `Docker Image CI` 的任务正在运行。等待它变成绿色的打勾状态（通常需要 2-3 分钟），说明云端镜像早已打包完毕。
 
-## 第二步：在飞牛 OS 中部署
+*(注意：如果你希望以后不输入密码就能下载镜像，你可以进入 GitHub 仓库页面右下角的 "Packages" -> 点击 "mylibpro" -> "Package settings" -> 滑到底部把 "Danger Zone" 里的 "Change package visibility" 改为 **Public**)*
 
-飞牛 OS 提供了图形化的 Docker Compose 部署方式（通常在 Docker 管理套件的“项目”或者“Compose”中进行）。
+## 第二步：在飞牛 OS 填入 URL 部署
 
-1. **进入 Docker 应用**：登录飞牛 OS 的网页后台，打开「Docker」套件。
-2. **下载 GitHub 项目文件**（两种方式选你方便的一款）：
-   - *方式一（推荐）*：如果你已经在飞牛的某个共享文件夹里通过 Git 拉取了你的仓库，直接在 Docker 套件的「项目/Compose」中，点击「新增」，选择对应的那份代码文件夹（包含 `docker-compose.yml`）。
-   - *方式二*：在网络上或者本地直接复制好改过的 `docker-compose.yml` 文本内容。在 Docker 的「项目」里选择「手工创建」，然后把代码粘贴进去。
-3. **开始构建与部署**：
-   - 因为配置里写的是 `build: .`，如果是选择文件夹创建的方式，飞牛 OS 的 Docker 会自动下载 Node.js 的镜像并帮你进行源码编译。这可能需要几分钟到十几分钟（取决于你 NAS 的性能和网络）。
-   - 部署完成后，应该能看到一个名为 `mylibpro` 的容器处于“运行中”状态。
+1. 回到飞牛 OS 的 Docker 管理界面。
+2. 找到你说的 **添加镜像 -> 从 URL 添加镜像**。
+3. **输入镜像名称 (或 URL)**：
+   请填入：
+   `ghcr.io/LJK0719/mylibpro:latest`
+   *(这里的 LJK0719 是根据我获取到的你的仓库路径推测的，如果你的 GitHub 用户名不同，请把它替换成真实的用户名的小写形式)*
 
-## 第三步：访问与测试
+4. **用户名与密码（可选）**：
+   - **如果你的 GitHub 仓库是公开的（Public）** 或者你刚才在 Package settings 里把镜像权限改成了公开：这里**不需要**填密码，直接拉取即可。
+   - **如果你的仓库是私有的（Private）**：你在飞牛 OS 这里填写：
+     - **用户名**：你的 GitHub 用户名
+     - **密码**：你需要去 GitHub官网生成一个 **Personal Access Token (PAT)**（带 `read:packages` 权限），千万不能填你的实际 GitHub 登录密码，必须填写以 `ghp_` 开头的 Token 令牌。
 
-- **访问**：在浏览器中输入 `http://<你的飞牛NAS的IP地址>:3000` 即可访问你的桌面书架。
-- **数据**：网页应当能够加载出你存放在 `libdata` 下的 PDF 和书籍内容。
+然后点击下载/拉取，飞牛 OS 就会自动把你的项目镜像下载到 NAS 里了。
 
-## 常见排错建议
+## 第三步：启动容器并映射路径
 
-- 如果部署失败，提示无法找到库或下载很慢，可能是国内网络拉取 npm 包的问题，可以在 `Dockerfile` 的 `RUN npm ci` 前加上 `RUN npm config set registry https://registry.npmmirror.com`。
-- 如果网页打开提示数据库报错，请确保 `docker-compose.yml` 映射的 `db` 和 `libdata` 路径在飞牛系统中赋予了正确的读写权限（可以在飞牛 File Manager 里修改相关文件夹权限，允许 Docker 用户或 everyone 读写）。
+镜像下载完毕后，在飞牛 OS 中从刚才的镜像启动一个容器（有的叫创建容器/部署容器）。在向导中，你需要配置两处核心参数：
+
+1. **端口映射 (Port)**：
+   将容器端口 `3000` 映射到你希望的 NAS 端口（比如也填 `3000`）。
+2. **文件夹映射 (Volume)**：
+   这是让容器能读到你 NAS 上的数据的关键步骤！添加两个**绑定挂载 (Bind Mount)**：
+   - 将飞牛 OS 里的 `libdata` 所在的真实共享文件夹，挂载到容器内的 `/app/libdata` 路径。
+   - 随便在飞牛 OS 里新建一个文件夹（例如命名为 `mylibpro_db`），将其挂载到容器内的 `/app/db` 路径（用于持久化保存数据库文件，防止重启丢失）。
+3. **环境变量 (Env)**：
+   手动添加一行环境变量：
+   - 名称: `GEMINI_API_KEY`
+   - 值: `你的真实API_KEY` (如果在上一步的网页里你希望使用前台输入的话，这一步就不用配啦，但我还是建议你留意下)。
+
+启动容器后，访问 `http://<飞牛IP>:3000` 即可！
