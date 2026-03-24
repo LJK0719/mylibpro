@@ -21,11 +21,11 @@ services:
       # 【重要】：将主机的实际路径映射到容器。
       # 格式为： 主机路径 : 容器路径
       # 由于您的 libdata 在 NAS 特定文件夹下，请修改冒号左侧为您 NAS 上的绝对路径
-      - /vol1/1000/Docker/mylibpro/libdata:/app/libdata
-      
+      - /vol1/1000/library/libdata:/app/libdata
+
       # 数据库文件映射，确保 library.db 不会在容器重启时丢失
       # 飞牛主机上的一个目录映射到容器的 /app/db (例如新建一个 db 文件夹)
-      - /vol1/1000/Docker/mylibpro/db:/app/db
+      - /vol1/1000/docker/lib:/app/db
 
 networks:
   default:
