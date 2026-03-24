@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.env*
+libdata
+db/*.db
+db/*.db-shm
+db/*.db-wal
+!.env.example

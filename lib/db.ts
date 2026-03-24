@@ -2,8 +2,11 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-const DB_DIR = path.join(process.cwd(), "db");
-const DB_PATH = path.join(DB_DIR, "library.db");
+// 优先读取 DB_PATH 环境变量；未配置时默认使用项目内的 db/library.db
+const DB_PATH = process.env.DB_PATH
+  ? path.resolve(process.cwd(), process.env.DB_PATH)
+  : path.join(process.cwd(), "db", "library.db");
+const DB_DIR = path.dirname(DB_PATH);
 
 let _db: Database.Database | null = null;
 
@@ -37,9 +40,38 @@ export function getDb(): Database.Database {
       indexed_date  TEXT DEFAULT '',
       citation_info TEXT DEFAULT '',
       remark        TEXT DEFAULT '',
-      folder_name   TEXT DEFAULT ''
+      folder_name   TEXT DEFAULT '',
+      status        TEXT NOT NULL DEFAULT 'unread',
+      is_favorite   INTEGER NOT NULL DEFAULT 0,
+      chapters      TEXT NOT NULL DEFAULT '[]',
+      shelves       TEXT NOT NULL DEFAULT '[]'
     );
   `);
+
+  // Migration: add missing columns for older databases
+  const cols = (_db!.pragma(`table_info(documents)`) as { name: string }[]).map(c => c.name);
+  const migrations: [string, string][] = [
+    ['status',      `ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'unread';`],
+    ['is_favorite', `ALTER TABLE documents ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;`],
+    ['chapters',    `ALTER TABLE documents ADD COLUMN chapters TEXT NOT NULL DEFAULT '[]';`],
+    ['shelves',     `ALTER TABLE documents ADD COLUMN shelves TEXT NOT NULL DEFAULT '[]';`],
+  ];
+  for (const [col, sql] of migrations) {
+    if (!cols.includes(col)) {
+      _db!.exec(sql);
+    }
+  }
+
+  // Create bookshelves table for managing desktop bookshelves
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS bookshelves (
+      shelf_id    TEXT PRIMARY KEY,
+      name        TEXT NOT NULL UNIQUE,
+      description TEXT NOT NULL DEFAULT '',
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
 
   // Create FTS5 virtual table for full-text search
   _db.exec(`
@@ -84,6 +116,8 @@ export function getDb(): Database.Database {
   // Index for common queries
   _db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(type);`);
   _db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year);`);
+  _db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);`);
+  _db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_is_favorite ON documents(is_favorite);`);
 
   return _db;
 }
@@ -105,6 +139,10 @@ export interface DocumentRecord {
   citation_info: string;
   remark: string;
   folder_name: string;
+  status: 'unread' | 'reading' | 'read';
+  is_favorite: number;
+  chapters: string; // JSON array string of chapter file names
+  shelves: string;  // JSON array string of shelf names this doc belongs to
 }
 
 export interface DocumentView {
@@ -124,6 +162,10 @@ export interface DocumentView {
   citation_info: string;
   remark: string;
   folder_name: string;
+  status: 'unread' | 'reading' | 'read';
+  is_favorite: boolean;
+  chapters: string[]; // sorted list of chapter file names
+  shelves: string[];  // list of bookshelf names this doc belongs to
 }
 
 export function recordToView(rec: DocumentRecord): DocumentView {
@@ -133,5 +175,15 @@ export function recordToView(rec: DocumentRecord): DocumentView {
     discipline: JSON.parse(rec.discipline || "[]"),
     subdiscipline: JSON.parse(rec.subdiscipline || "[]"),
     keywords: JSON.parse(rec.keywords || "[]"),
+    is_favorite: rec.is_favorite === 1,
+    chapters: JSON.parse(rec.chapters || "[]"),
+    shelves: JSON.parse(rec.shelves || "[]"),
   };
+}
+
+export interface BookshelfRecord {
+  shelf_id: string;
+  name: string;
+  description: string;
+  created_at: string;
 }

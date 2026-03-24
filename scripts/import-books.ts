@@ -8,12 +8,17 @@
 import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";
+import { loadEnvConfig } from "@next/env";
 
 // Resolve paths relative to project root
 const PROJECT_ROOT = path.resolve(__dirname, "..");
-const DATA_ROOT = path.resolve(PROJECT_ROOT, "..", "data");
+
+// Load .env.local
+loadEnvConfig(PROJECT_ROOT);
+
+const DATA_ROOT = process.env.DATA_ROOT || path.resolve(PROJECT_ROOT, "..", "data");
 const DB_DIR = path.join(PROJECT_ROOT, "db");
-const DB_PATH = path.join(DB_DIR, "library.db");
+const DB_PATH = process.env.DB_PATH ? path.resolve(PROJECT_ROOT, process.env.DB_PATH) : path.join(DB_DIR, "library.db");
 
 // Document source directories to scan
 const SOURCE_DIRS: { dir: string; type: string }[] = [
@@ -49,9 +54,26 @@ function main() {
       indexed_date  TEXT DEFAULT '',
       citation_info TEXT DEFAULT '',
       remark        TEXT DEFAULT '',
-      folder_name   TEXT DEFAULT ''
+      folder_name   TEXT DEFAULT '',
+      status        TEXT NOT NULL DEFAULT 'unread',
+      is_favorite   INTEGER NOT NULL DEFAULT 0,
+      chapters      TEXT NOT NULL DEFAULT '[]'
     );
   `);
+
+    // Migration: add missing columns if not exists (for older databases)
+    const cols = (db.pragma(`table_info(documents)`) as { name: string }[]).map(c => c.name);
+    const migrations: [string, string][] = [
+        ['status',      `ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'unread';`],
+        ['is_favorite', `ALTER TABLE documents ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0;`],
+        ['chapters',    `ALTER TABLE documents ADD COLUMN chapters TEXT NOT NULL DEFAULT '[]';`],
+    ];
+    for (const [col, sql] of migrations) {
+        if (!cols.includes(col)) {
+            db.exec(sql);
+            console.log(`   ✔ Migrated: added column '${col}'.`);
+        }
+    }
 
     // Create FTS5
     db.exec(`
@@ -93,17 +115,19 @@ function main() {
 
     db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(type);`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_year ON documents(year);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_is_favorite ON documents(is_favorite);`);
 
     // Prepare upsert statement
     const upsert = db.prepare(`
     INSERT INTO documents (
       document_id, type, title, authors, year, discipline, subdiscipline,
       keywords, abstract, toc, full_text_path, token_count, indexed_date,
-      citation_info, remark, folder_name
+      citation_info, remark, folder_name, status, is_favorite, chapters
     ) VALUES (
       @document_id, @type, @title, @authors, @year, @discipline, @subdiscipline,
       @keywords, @abstract, @toc, @full_text_path, @token_count, @indexed_date,
-      @citation_info, @remark, @folder_name
+      @citation_info, @remark, @folder_name, @status, @is_favorite, @chapters
     ) ON CONFLICT(document_id) DO UPDATE SET
       type = excluded.type,
       title = excluded.title,
@@ -119,7 +143,10 @@ function main() {
       indexed_date = excluded.indexed_date,
       citation_info = excluded.citation_info,
       remark = excluded.remark,
-      folder_name = excluded.folder_name
+      folder_name = excluded.folder_name,
+      status = excluded.status,
+      is_favorite = excluded.is_favorite,
+      chapters = excluded.chapters
   `);
 
     let totalImported = 0;
@@ -160,6 +187,17 @@ function main() {
                 const raw = fs.readFileSync(metaPath, "utf-8");
                 const meta = JSON.parse(raw);
 
+                // Scan chapters folder for .md files
+                const chaptersDir = path.join(dir, folder.name, "chapters");
+                let chapters: string[] = [];
+                if (fs.existsSync(chaptersDir)) {
+                    chapters = fs
+                        .readdirSync(chaptersDir, { withFileTypes: true })
+                        .filter(f => f.isFile() && f.name.endsWith(".md"))
+                        .map(f => f.name)
+                        .sort();
+                }
+
                 records.push({
                     document_id: meta.document_id || `${type}-${folder.name}`,
                     type: meta.type || type,
@@ -177,6 +215,9 @@ function main() {
                     citation_info: meta.citation_info || "",
                     remark: meta.remark || "",
                     folder_name: folder.name,
+                    status: meta.status || "unread",
+                    is_favorite: meta.is_favorite ? 1 : 0,
+                    chapters: JSON.stringify(chapters),
                 });
             } catch (err) {
                 console.log(`   ✗ Error reading ${folder.name}: ${err}`);

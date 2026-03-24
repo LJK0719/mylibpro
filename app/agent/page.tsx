@@ -34,6 +34,8 @@ export default function AgentPage() {
     const [sessionId, setSessionId] = useState<string>("");
     const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
     const [showWorkspace, setShowWorkspace] = useState(false);
+    const [apiKey, setApiKey] = useState("");
+    const [model, setModel] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
 
@@ -51,6 +53,14 @@ export default function AgentPage() {
     const handleSend = useCallback(
         async (text: string) => {
             if (!text.trim() || isLoading) return;
+            if (!apiKey.trim()) {
+                alert("请输入 Gemini API Key");
+                return;
+            }
+            if (!model.trim()) {
+                alert("请输入模型名称（例如 gemini-2.5-flash-preview）");
+                return;
+            }
 
             // Add user message
             const userMsg: Message = {
@@ -93,6 +103,8 @@ export default function AgentPage() {
                         message: text,
                         sessionId,
                         history,
+                        apiKey: apiKey.trim(),
+                        model,
                     }),
                     signal: abortRef.current.signal,
                 });
@@ -241,7 +253,7 @@ export default function AgentPage() {
                 abortRef.current = null;
             }
         },
-        [isLoading, messages, sessionId]
+        [isLoading, messages, sessionId, apiKey, model]
     );
 
     const handleNewChat = useCallback(() => {
@@ -289,6 +301,21 @@ export default function AgentPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                        <input
+                            type="text"
+                            placeholder="模型名称 (如 gemini-2.5-flash)"
+                            value={model}
+                            onChange={(e) => setModel(e.target.value)}
+                            className="h-8 px-3 w-48 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <input
+                            type="password"
+                            placeholder="Gemini API Key"
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            className="h-8 px-3 w-48 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <div className="w-px h-6 bg-border mx-1"></div>
                         <button
                             onClick={() => setShowWorkspace(!showWorkspace)}
                             className={`view-btn ${showWorkspace ? "active" : ""}`}

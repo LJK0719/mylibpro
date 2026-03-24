@@ -15,6 +15,9 @@ export async function GET(req: NextRequest) {
     const yearTo = url.searchParams.get("yearTo")
         ? parseInt(url.searchParams.get("yearTo")!)
         : null;
+    const favorite = url.searchParams.get("favorite") || "";
+    const statusFilter = url.searchParams.get("status") || "";
+    const shelf = url.searchParams.get("shelf") || "";
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1"));
     const pageSize = Math.min(
         50,
@@ -31,7 +34,7 @@ export async function GET(req: NextRequest) {
         );
         const escaped = q
             .trim()
-            .replace(/['"]/g, "")
+            .replace(/['\"]/g, "")
             .split(/\s+/)
             .map((t) => `"${t}"`)
             .join(" OR ");
@@ -60,6 +63,17 @@ export async function GET(req: NextRequest) {
     if (yearTo !== null) {
         conditions.push(`d.year <= @yearTo`);
         params.yearTo = yearTo;
+    }
+    if (favorite === "1") {
+        conditions.push(`d.is_favorite = 1`);
+    }
+    if (statusFilter) {
+        conditions.push(`d.status = @statusFilter`);
+        params.statusFilter = statusFilter;
+    }
+    if (shelf) {
+        conditions.push(`d.shelves LIKE @shelf`);
+        params.shelf = `%${shelf}%`;
     }
 
     const whereClause =

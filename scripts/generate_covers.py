@@ -24,7 +24,19 @@ except ImportError:
 # Paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)  # mylibpro
-DATA_ROOT = os.path.join(os.path.dirname(PROJECT_ROOT), "data")
+
+# Load .env.local
+env_path = os.path.join(PROJECT_ROOT, ".env.local")
+if os.path.exists(env_path):
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                parts = line.split("=", 1)
+                if len(parts) == 2:
+                    os.environ[parts[0].strip()] = parts[1].strip()
+
+DATA_ROOT = os.environ.get("DATA_ROOT", os.path.join(os.path.dirname(PROJECT_ROOT), "data"))
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "public", "covers")
 
 # Source directories

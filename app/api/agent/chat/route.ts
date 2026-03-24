@@ -44,7 +44,7 @@ import {
     getWorkspaceSnapshot,
 } from "@/lib/workspace";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
 
 // ─── Workflow phases ─────────────────────────────────────────────
 
@@ -155,10 +155,14 @@ export async function POST(req: NextRequest) {
         message,
         sessionId = `session-${Date.now()}`,
         history = [],
+        apiKey,
+        model,
     } = body as {
         message: string;
         sessionId?: string;
         history?: ChatMessage[];
+        apiKey?: string;
+        model?: string;
     };
 
     if (!message) {
@@ -167,6 +171,21 @@ export async function POST(req: NextRequest) {
             { status: 400, headers: { "Content-Type": "application/json" } }
         );
     }
+    if (!apiKey) {
+        return new Response(
+            JSON.stringify({ error: "API Key is required. Please set it in the UI." }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+    }
+    if (!model) {
+        return new Response(
+            JSON.stringify({ error: "Model name is required. Please set it in the UI." }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    const GEMINI_MODEL = model;
 
     getOrCreateSession(sessionId);
     const workspaceContext = getWorkspaceSummary(sessionId);
@@ -223,7 +242,7 @@ export async function POST(req: NextRequest) {
                     for (let retry = 0; retry < 3; retry++) {
                         try {
                             response = await ai.models.generateContent({
-                                model: "gemini-3-flash-preview",
+                                model: GEMINI_MODEL,
                                 contents: loopContents,
                                 config: {
                                     systemInstruction: dynamicSystemPrompt + phaseHint,

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  mylibpro:
+    build: .
+    # 如果您已经将镜像推送到仓库，也可以替换为：
+    # image: your-dockerhub-user/mylibpro:latest
+    container_name: mylibpro
+    restart: unless-stopped
+    ports:
+      # 映射飞牛OS主机端口到容器3000端口（左机右容）
+      - "3000:3000"
+    environment:
+      # 指定容器内的大模型 API KEY（替换为您的真实KEY）
+      - GEMINI_API_KEY=your_api_key_here
+      - GEMINI_MODEL=gemini-3.1-flash-lite-preview
+      # 指定容器内的路径，通常不需要修改
+      - DATA_ROOT=/app/libdata
+      - DB_PATH=/app/db/library.db
+    volumes:
+      # 【重要】：将主机的实际路径映射到容器。
+      # 格式为： 主机路径 : 容器路径
+      # 由于您的 libdata 在 NAS 特定文件夹下，请修改冒号左侧为您 NAS 上的绝对路径
+      - /vol1/1000/Docker/mylibpro/libdata:/app/libdata
+      
+      # 数据库文件映射，确保 library.db 不会在容器重启时丢失
+      # 飞牛主机上的一个目录映射到容器的 /app/db (例如新建一个 db 文件夹)
+      - /vol1/1000/Docker/mylibpro/db:/app/db
+
+networks:
+  default:
+    name: mylibpro-network

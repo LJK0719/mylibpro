@@ -22,8 +22,11 @@ import {
 import path from "path";
 import fs from "fs";
 
-// ─── Data root (relative to project root → ../data) ──────────────
-const DATA_ROOT = path.resolve(process.cwd(), "..", "data");
+// ─── Data root ─────────────────────────────────────────────────────
+// 优先读取 DATA_ROOT 环境变量；未配置时默认指向项目上一级的 data 目录
+const DATA_ROOT = process.env.DATA_ROOT
+    ? path.resolve(process.cwd(), process.env.DATA_ROOT)
+    : path.resolve(process.cwd(), "..", "data");
 
 // ═══════════════════════════════════════════════════════════════════
 // READ TOOLS — Function Declarations
@@ -80,7 +83,7 @@ export const loadFullTextDeclaration = {
 export const getDocumentDetailDeclaration = {
     name: "get_document_detail",
     description:
-        "Get detailed metadata of a document including its full abstract, table of contents (toc), citation info, keywords, etc. Useful for deciding whether to load the full text and for determining reading order.",
+        "Get detailed metadata of a document including its full abstract, table of contents (toc), citation info, keywords, and the list of available chapter files (chapters). Useful for deciding whether to load the full text and for determining reading order. When chapters are available, use load_chapter to load individual chapters instead of load_full_text.",
     parameters: {
         type: Type.OBJECT,
         properties: {
@@ -90,6 +93,26 @@ export const getDocumentDetailDeclaration = {
             },
         },
         required: ["document_id"],
+    },
+};
+
+export const loadChapterDeclaration = {
+    name: "load_chapter",
+    description:
+        "Load the Markdown content of a specific chapter of a document. Use get_document_detail first to obtain the list of available chapter file names. Only load the chapters that are relevant to the user's question.",
+    parameters: {
+        type: Type.OBJECT,
+        properties: {
+            document_id: {
+                type: Type.STRING,
+                description: "The unique document_id from the library catalog.",
+            },
+            chapter_file_name: {
+                type: Type.STRING,
+                description: "The chapter file name (e.g. '02_Chapter_1_Introduction.md') as returned by get_document_detail.",
+            },
+        },
+        required: ["document_id", "chapter_file_name"],
     },
 };
 
@@ -174,6 +197,7 @@ export const removeReferenceDeclaration = {
 export const allDeclarations = [
     searchLibraryDeclaration,
     loadFullTextDeclaration,
+    loadChapterDeclaration,
     getDocumentDetailDeclaration,
     recordReadingDeclaration,
     updateResearchNotesDeclaration,
@@ -202,6 +226,8 @@ export function executeTool(
             return { name, result: executeSearchLibrary(args) };
         case "load_full_text":
             return { name, result: executeLoadFullText(args, sessionId) };
+        case "load_chapter":
+            return { name, result: executeLoadChapter(args, sessionId) };
         case "get_document_detail":
             return { name, result: executeGetDocumentDetail(args) };
         case "record_reading":
@@ -353,6 +379,79 @@ function executeLoadFullText(
     };
 }
 
+function executeLoadChapter(
+    args: Record<string, unknown>,
+    sessionId: string
+): Record<string, unknown> {
+    const db = getDb();
+    const documentId = args.document_id as string;
+    const chapterFileName = args.chapter_file_name as string;
+
+    if (!chapterFileName || chapterFileName.includes("..") || chapterFileName.includes("/") || chapterFileName.includes("\\")) {
+        return { error: "Invalid chapter_file_name." };
+    }
+
+    const row = db
+        .prepare(`SELECT * FROM documents WHERE document_id = ?`)
+        .get(documentId) as import("./db").DocumentRecord | undefined;
+
+    if (!row) {
+        return { error: `Document not found: ${documentId}` };
+    }
+
+    const view = recordToView(row);
+
+    if (view.chapters.length > 0 && !view.chapters.includes(chapterFileName)) {
+        return {
+            error: `Chapter "${chapterFileName}" not found in this document.`,
+            available_chapters: view.chapters,
+        };
+    }
+
+    const chapterPath = path.join(
+        DATA_ROOT,
+        view.type,
+        view.folder_name,
+        "chapters",
+        chapterFileName
+    );
+
+    if (!fs.existsSync(chapterPath)) {
+        return {
+            error: `Chapter file not found on disk: ${chapterFileName}`,
+            document_id: documentId,
+            title: view.title,
+        };
+    }
+
+    const content = fs.readFileSync(chapterPath, "utf-8");
+
+    // Add to active references (idempotent — workspace will deduplicate)
+    addActiveReference(sessionId, {
+        documentId: view.document_id,
+        type: view.type,
+        title: view.title,
+        authors: view.authors,
+        year: view.year,
+        discipline: view.discipline,
+        keywords: view.keywords,
+        abstract:
+            (view.abstract || "").length > 200
+                ? (view.abstract || "").substring(0, 200) + "..."
+                : view.abstract || "",
+        tokenCount: view.token_count,
+        citationInfo: view.citation_info || "",
+        fullTextPath: `${view.type}/${view.folder_name}/chapters/${chapterFileName}`,
+    });
+
+    return {
+        document_id: view.document_id,
+        title: view.title,
+        chapter_file_name: chapterFileName,
+        content,
+    };
+}
+
 function executeGetDocumentDetail(
     args: Record<string, unknown>
 ): Record<string, unknown> {
@@ -393,6 +492,10 @@ function executeGetDocumentDetail(
         toc: view.toc,
         token_count: view.token_count,
         citation_info: citationText,
+        chapters: view.chapters,
+        chapters_hint: view.chapters.length > 0
+            ? `This book has ${view.chapters.length} chapter file(s). Use load_chapter with one of the chapter_file_name values above to read specific chapters. Prefer this over load_full_text.`
+            : "No individual chapter files available. Use load_full_text to read the full document.",
     };
 }
 
