@@ -1,0 +1,23 @@
+{
+  "name": "research.update_notebook",
+  "requiredTools": ["update_research_notes"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "document_id": { "type": "string" },
+      "key_findings": { "type": "string" },
+      "relation_to_question": { "type": "string" },
+      "conflicts_or_limits": { "type": "string" }
+    },
+    "required": ["document_id", "key_findings", "relation_to_question"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "notebook_update_mode": { "type": "string" },
+      "updated_sections": { "type": "array", "items": { "type": "string" } },
+      "open_questions": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["notebook_update_mode", "updated_sections"]
+  }
+}

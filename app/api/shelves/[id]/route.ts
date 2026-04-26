@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, BookshelfRecord } from "@/lib/db";
+import {
+  deleteShelfAndDocumentReferences,
+  getShelfById,
+  updateShelfDescription,
+} from "@/lib/repositories/shelves";
 
 // PATCH /api/shelves/[id] — 更新书架说明
 export async function PATCH(
@@ -14,25 +18,15 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const db = getDb();
-  const shelf = db
-    .prepare(`SELECT * FROM bookshelves WHERE shelf_id = ?`)
-    .get(id) as BookshelfRecord | undefined;
+  const shelf = getShelfById(id);
 
   if (!shelf) {
     return NextResponse.json({ error: "书架不存在" }, { status: 404 });
   }
 
-  if (body.description !== undefined) {
-    db.prepare(`UPDATE bookshelves SET description = ? WHERE shelf_id = ?`).run(
-      body.description,
-      id
-    );
-  }
-
-  const updated = db
-    .prepare(`SELECT * FROM bookshelves WHERE shelf_id = ?`)
-    .get(id) as BookshelfRecord;
+  const updated = body.description !== undefined
+    ? updateShelfDescription(id, body.description)
+    : shelf;
   return NextResponse.json(updated);
 }
 
@@ -42,36 +36,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const db = getDb();
-
-  const shelf = db
-    .prepare(`SELECT * FROM bookshelves WHERE shelf_id = ?`)
-    .get(id) as BookshelfRecord | undefined;
+  const shelf = getShelfById(id);
 
   if (!shelf) {
     return NextResponse.json({ error: "书架不存在" }, { status: 404 });
   }
 
-  const shelfName = shelf.name;
-
-  // Remove this shelf name from all documents that reference it
-  const docs = db
-    .prepare(`SELECT document_id, shelves FROM documents WHERE shelves LIKE ?`)
-    .all(`%${shelfName}%`) as { document_id: string; shelves: string }[];
-
-  const removeShelf = db.transaction(() => {
-    for (const doc of docs) {
-      const arr: string[] = JSON.parse(doc.shelves || "[]");
-      const updated = arr.filter((s) => s !== shelfName);
-      db.prepare(`UPDATE documents SET shelves = ? WHERE document_id = ?`).run(
-        JSON.stringify(updated),
-        doc.document_id
-      );
-    }
-    db.prepare(`DELETE FROM bookshelves WHERE shelf_id = ?`).run(id);
-  });
-
-  removeShelf();
+  deleteShelfAndDocumentReferences(id, shelf.name);
 
   return NextResponse.json({ ok: true });
 }

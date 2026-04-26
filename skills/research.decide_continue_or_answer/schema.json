@@ -1,0 +1,24 @@
+{
+  "name": "research.decide_continue_or_answer",
+  "requiredTools": ["search_library", "load_full_text", "load_chapter", "remove_reference"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string" },
+      "active_references": { "type": "array", "items": { "type": "string" } },
+      "reading_history": { "type": "array", "items": { "type": "string" } },
+      "research_notebook": { "type": "string" }
+    },
+    "required": ["query", "reading_history", "research_notebook"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "decision": { "type": "string" },
+      "reason": { "type": "string" },
+      "needed_document_type": { "type": "string" },
+      "missing_evidence": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["decision", "reason"]
+  }
+}

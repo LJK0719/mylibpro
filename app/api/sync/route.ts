@@ -1,59 +1,21 @@
 import { NextResponse } from "next/server";
 import path from "path";
 import fs from "fs";
-import { getDb } from "@/lib/db";
+import { getDataRoot } from "@/lib/config";
+import { rebuildDocumentsFts, upsertImportedDocuments } from "@/lib/repositories/documents";
+import { normalizeMetadataI18n } from "@/lib/i18n";
 
 export async function POST() {
     try {
-        const DATA_ROOT = process.env.DATA_ROOT
-            ? path.resolve(process.cwd(), process.env.DATA_ROOT)
-            : path.resolve(process.cwd(), "..", "data");
+        const DATA_ROOT = getDataRoot();
 
         const SOURCE_DIRS = [
             { dir: path.join(DATA_ROOT, "book"), type: "book" },
             { dir: path.join(DATA_ROOT, "paper"), type: "paper" },
         ];
 
-        const db = getDb();
-
-        const upsert = db.prepare(`
-            INSERT INTO documents (
-              document_id, type, title, authors, year, discipline, subdiscipline,
-              keywords, abstract, toc, full_text_path, token_count, indexed_date,
-              citation_info, remark, folder_name, status, is_favorite, chapters
-            ) VALUES (
-              @document_id, @type, @title, @authors, @year, @discipline, @subdiscipline,
-              @keywords, @abstract, @toc, @full_text_path, @token_count, @indexed_date,
-              @citation_info, @remark, @folder_name, @status, @is_favorite, @chapters
-            ) ON CONFLICT(document_id) DO UPDATE SET
-              type = excluded.type,
-              title = excluded.title,
-              authors = excluded.authors,
-              year = excluded.year,
-              discipline = excluded.discipline,
-              subdiscipline = excluded.subdiscipline,
-              keywords = excluded.keywords,
-              abstract = excluded.abstract,
-              toc = excluded.toc,
-              full_text_path = excluded.full_text_path,
-              token_count = excluded.token_count,
-              indexed_date = excluded.indexed_date,
-              citation_info = excluded.citation_info,
-              remark = excluded.remark,
-              folder_name = excluded.folder_name,
-              status = excluded.status,
-              is_favorite = excluded.is_favorite,
-              chapters = excluded.chapters
-        `);
-
         let totalImported = 0;
         let totalErrors = 0;
-
-        const insertMany = db.transaction((records: Record<string, unknown>[]) => {
-            for (const rec of records) {
-                upsert.run(rec);
-            }
-        });
 
         for (const { dir, type } of SOURCE_DIRS) {
             if (!fs.existsSync(dir)) continue;
@@ -74,28 +36,42 @@ export async function POST() {
                 try {
                     const raw = fs.readFileSync(metaPath, "utf-8");
                     const meta = JSON.parse(raw);
+                    const i18n = normalizeMetadataI18n(meta);
 
                     const chaptersDir = path.join(dir, folder.name, "chapters");
-                    let chapters: string[] = [];
-                    if (fs.existsSync(chaptersDir)) {
-                        chapters = fs
+                    const chapters: string[] = fs.existsSync(chaptersDir)
+                        ? fs
                             .readdirSync(chaptersDir, { withFileTypes: true })
                             .filter(f => f.isFile() && f.name.endsWith(".md"))
                             .map(f => f.name)
-                            .sort();
-                    }
+                            .sort()
+                        : [];
 
                     records.push({
                         document_id: meta.document_id || `${type}-${folder.name}`,
                         type: meta.type || type,
                         title: meta.title || folder.name,
+                        title_zh: i18n.title.zh,
+                        title_en: i18n.title.en,
                         authors: JSON.stringify(meta.authors || []),
+                        authors_zh: JSON.stringify(i18n.authors.zh),
+                        authors_en: JSON.stringify(i18n.authors.en),
                         year: meta.year || null,
                         discipline: JSON.stringify(meta.discipline || []),
+                        discipline_zh: JSON.stringify(i18n.discipline.zh),
+                        discipline_en: JSON.stringify(i18n.discipline.en),
                         subdiscipline: JSON.stringify(meta.subdiscipline || []),
+                        subdiscipline_zh: JSON.stringify(i18n.subdiscipline.zh),
+                        subdiscipline_en: JSON.stringify(i18n.subdiscipline.en),
                         keywords: JSON.stringify(meta.keywords || []),
+                        keywords_zh: JSON.stringify(i18n.keywords.zh),
+                        keywords_en: JSON.stringify(i18n.keywords.en),
                         abstract: meta.abstract || "",
+                        abstract_zh: i18n.abstract.zh,
+                        abstract_en: i18n.abstract.en,
                         toc: meta.toc || "",
+                        toc_zh: i18n.toc.zh,
+                        toc_en: i18n.toc.en,
                         full_text_path: meta.full_text_path || "",
                         token_count: meta.token_count || 0,
                         indexed_date: meta.indexed_date || "",
@@ -112,15 +88,15 @@ export async function POST() {
                 }
             }
 
-            insertMany(records);
+            upsertImportedDocuments(records);
             totalImported += records.length;
         }
 
-        db.exec(`INSERT INTO documents_fts(documents_fts) VALUES('rebuild');`);
+        rebuildDocumentsFts();
 
         return NextResponse.json({
             success: true,
-            message: `已成功同步 ${totalImported} 篇文献`,
+            message: `Synced ${totalImported} document(s).`,
             totalImported,
             totalErrors,
         });

@@ -1,0 +1,24 @@
+{
+  "name": "research.compose_answer_with_citations",
+  "requiredTools": [],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string" },
+      "active_references": { "type": "array", "items": { "type": "string" } },
+      "research_notebook": { "type": "string" },
+      "citation_style": { "type": "string", "default": "default" }
+    },
+    "required": ["query", "research_notebook"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "answer_markdown": { "type": "string" },
+      "cited_documents": { "type": "array", "items": { "type": "string" } },
+      "confidence": { "type": "string" },
+      "limitations": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["answer_markdown", "cited_documents", "confidence"]
+  }
+}

@@ -7,146 +7,92 @@
  *
  * The agent loop enforces the design doc workflow through code,
  * NOT through prompt instructions. The available Function Declarations
- * are dynamically selected based on the current workflow phase:
+ * are dynamically selected based on the current workflow phase
+ * (see lib/agent/state-machine.ts for the authoritative transitions):
  *
- *   INITIAL ──search(non-empty)──→ MUST_READ
- *   INITIAL ──search(empty)──────→ INITIAL (can retry)
- *   MUST_READ ──load_full_text───→ MUST_RECORD
- *   MUST_RECORD ──record_reading─→ MUST_NOTES
- *   MUST_NOTES ──update_notes────→ CAN_DECIDE
- *   CAN_DECIDE ──search(non-empty)→ MUST_READ
- *   CAN_DECIDE ──load_full_text──→ MUST_RECORD
- *   CAN_DECIDE ──(text output)───→ done
+ *   INITIAL      ──search(non-empty)─────────────→ MUST_READ
+ *   INITIAL      ──search(empty)─────────────────→ INITIAL (can retry)
+ *   MUST_READ    ──load_chapter / load_full_text→ MUST_RECORD
+ *   MUST_READ    ──load_full_text(book)──────────→ MUST_READ (must call load_chapter)
+ *   MUST_READ    ──decide(answer)────────────────→ CAN_DECIDE (browse-query escape)
+ *   MUST_RECORD  ──record_reading────────────────→ MUST_NOTES
+ *   MUST_NOTES   ──update_research_notes─────────→ MUST_DECIDE
+ *   MUST_DECIDE  ──decide(answer)────────────────→ CAN_DECIDE
+ *   MUST_DECIDE  ──decide(read_more)─────────────→ MUST_READ
+ *   MUST_DECIDE  ──decide(search_more)───────────→ INITIAL
+ *   CAN_DECIDE   ──(text output)─────────────────→ done
  *
  * Available tools per phase:
  *   INITIAL:      all tools
- *   MUST_READ:    get_document_detail, load_full_text, remove_reference
+ *   MUST_READ:    get_document_detail, load_full_text, load_chapter,
+ *                 remove_reference, decide_continue_or_answer
  *   MUST_RECORD:  record_reading
  *   MUST_NOTES:   update_research_notes
+ *   MUST_DECIDE:  decide_continue_or_answer
  *   CAN_DECIDE:   all tools
  */
 
 import { NextRequest } from "next/server";
-import { GoogleGenAI, type FunctionDeclaration } from "@google/genai";
 import {
-    searchLibraryDeclaration,
-    loadFullTextDeclaration,
-    getDocumentDetailDeclaration,
-    recordReadingDeclaration,
-    updateResearchNotesDeclaration,
-    removeReferenceDeclaration,
-    allDeclarations,
+    type ChatMessage,
+    type OpenAIMessage,
+    resolveAgentConfig,
+    createGeminiClient,
+    callGemini,
+    callOpenAICompatible,
+} from "@/lib/agent/providers";
+import {
+    type WorkflowPhase,
+    getPhaseTools,
+    phaseAfterTool,
+    getPhaseHint,
+} from "@/lib/agent/state-machine";
+import {
     executeTool,
-} from "@/lib/agent-tools";
+} from "@/lib/agent/tools";
 import {
     getOrCreateSession,
     getWorkspaceSummary,
     getWorkspaceSnapshot,
-} from "@/lib/workspace";
+    addArtifact,
+    recordEvent,
+    updateSession,
+} from "@/lib/agent/workspace";
+import { getResearchSkillPrompt } from "@/lib/agent/skills";
+import { SYSTEM_PROMPT } from "@/lib/agent/system-prompt";
 
 
-
-// ─── Workflow phases ─────────────────────────────────────────────
-
-type WorkflowPhase =
-    | "initial"     // Can do anything: search, read, or answer directly
-    | "must_read"   // Search returned results → must load & read at least one
-    | "must_record" // Loaded full text → must call record_reading
-    | "must_notes"  // Recorded reading → must call update_research_notes
-    | "can_decide"; // Completed one full read cycle → can search again, read more, or answer
-
-/**
- * Returns the set of function declarations available in the given phase.
- */
-function getPhaseTools(phase: WorkflowPhase): FunctionDeclaration[] {
-    switch (phase) {
-        case "initial":
-        case "can_decide":
-            // Full freedom: all tools available
-            return allDeclarations as unknown as FunctionDeclaration[];
-
-        case "must_read":
-            // Must read a document. Can also check details or remove refs.
-            return [
-                getDocumentDetailDeclaration,
-                loadFullTextDeclaration,
-                removeReferenceDeclaration,
-            ] as unknown as FunctionDeclaration[];
-
-        case "must_record":
-            // Must record the reading before anything else
-            return [recordReadingDeclaration] as unknown as FunctionDeclaration[];
-
-        case "must_notes":
-            // Must update research notes before anything else
-            return [updateResearchNotesDeclaration] as unknown as FunctionDeclaration[];
-    }
-}
-
-/**
- * Returns a phase-specific system instruction addition.
- * This provides context on what the model should do next.
- */
-function getPhaseHint(phase: WorkflowPhase): string {
-    switch (phase) {
-        case "must_read":
-            return "\n\n[系统提示] 搜索已返回结果，请确定阅读顺序并加载全文进行深度阅读。";
-        case "must_record":
-            return "\n\n[系统提示] 你已加载并阅读了全文，请调用 record_reading 记录你的关键发现。";
-        case "must_notes":
-            return "\n\n[系统提示] 阅读记录已完成，请调用 update_research_notes 更新研究笔记。";
-        default:
-            return "";
-    }
-}
-
-// ─── System Prompt ───────────────────────────────────────────────
-
-const SYSTEM_PROMPT = `你是 LibPro 学术研究助手——一位严谨的学术 RAG 领域专家。你可以访问一个包含大量图书与论文的数字图书馆，并拥有完整的工作区管理能力。
-
-## 你的工具
-
-### 读取工具（信息获取）
-1. **search_library** — 搜索图书馆目录，返回文献元数据列表
-2. **get_document_detail** — 获取文献详细元数据（摘要、目录、关键词等），用于确定阅读顺序
-3. **load_full_text** — 加载文献的完整 Markdown 全文（自动加入参考文献表）
-
-### 写入工具（工作区管理）
-4. **record_reading** — 阅读完成后记录关键发现并创建阅读历史条目（文献保留在参考文献表中）
-5. **update_research_notes** — 更新研究笔记（结构化 Markdown 格式）
-6. **remove_reference** — 主动移除低相关度文献以释放上下文空间（这是唯一从参考文献表移除文献的方式）
-
-## 研究笔记 (Research Notes)
-
-你的工作区中包含一份 **研究笔记 (Research Notebook)**，用于记录你在阅读文献过程中的关键发现、数据支撑和待解决的问题。
-
-**要求：**
-- **拒绝平铺直叙的摘要**：不要只是简单罗列文献内容。
-- **强调批判性思考**：请记录你对文献的分析、评价和质疑。
-- **关注点**：
-    - 矛盾点：该文献与已知信息是否冲突？
-    - 创新点：相比其他研究，它的独特贡献是什么？
-    - 局限性：方法论有什么缺陷？数据是否过时？
-    - 关联性：如何连接到用户的问题？
-- 笔记内容由你自主决定，只需记录对回答用户问题有价值的信息
-- 保持笔记简洁、结构清晰
-- 每次阅读完文献后，必须调用 \`update_research_notes\` 更新笔记
-- 你可以选择 \`append\` (追加) 新发现，或者 \`replace\` (重写) 整理后的笔记
-
-## 回答规范
-- 使用中文回答，专业、深入、有理有据
-- 必须标注引用来源，格式为 [文献标题, 作者, 年份]
-- 使用 Markdown 格式组织回答
-- 最终答案末尾生成标准格式引用列表
-- 除非用户明确要求，否则优先加载教材（book）作为理论基础，再加载论文（paper）获取前沿进展
-- 如果问题模糊或需要澄清，向用户提出明确的问题
-- 如果问题超出图书馆文献范围，诚实告知用户`;
 
 // ─── Types ───────────────────────────────────────────────────────
 
-interface ChatMessage {
-    role: "user" | "model";
-    text: string;
+function persistFinalAnswer(sessionId: string, answer: string) {
+    if (!answer.trim()) return;
+    const snapshot = getWorkspaceSnapshot(sessionId);
+    const sourceDocumentIds = Array.from(
+        new Set([
+            ...snapshot.activeReferences.map((ref) => ref.documentId),
+            ...snapshot.readingHistory
+                .filter((entry) => entry.citationUsed || entry.keyFindings)
+                .map((entry) => entry.documentId),
+        ])
+    );
+
+    const artifact = addArtifact(sessionId, {
+        type: "final_answer",
+        title: "Final answer",
+        contentMarkdown: answer,
+        sourceDocumentIds,
+    });
+
+    recordEvent(sessionId, {
+        type: "answer_generated",
+        payload: {
+            artifactId: artifact.artifactId,
+            sourceDocumentIds,
+            answerLength: answer.length,
+        },
+    });
+    updateSession(sessionId, { status: "completed" });
 }
 
 export async function POST(req: NextRequest) {
@@ -155,14 +101,18 @@ export async function POST(req: NextRequest) {
         message,
         sessionId = `session-${Date.now()}`,
         history = [],
+        provider,
         apiKey,
         model,
+        baseUrl,
     } = body as {
         message: string;
         sessionId?: string;
         history?: ChatMessage[];
+        provider?: string;
         apiKey?: string;
         model?: string;
+        baseUrl?: string;
     };
 
     if (!message) {
@@ -171,30 +121,44 @@ export async function POST(req: NextRequest) {
             { status: 400, headers: { "Content-Type": "application/json" } }
         );
     }
-    if (!apiKey) {
+    const agentConfig = resolveAgentConfig({ provider, apiKey, model, baseUrl });
+
+    if (!agentConfig.apiKey) {
         return new Response(
-            JSON.stringify({ error: "API Key is required. Please set it in the UI." }),
+            JSON.stringify({ error: `API Key is required. Configure ${agentConfig.provider === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY"} or set it in advanced settings.` }),
             { status: 400, headers: { "Content-Type": "application/json" } }
         );
     }
-    if (!model) {
+    if (!agentConfig.model) {
         return new Response(
-            JSON.stringify({ error: "Model name is required. Please set it in the UI." }),
+            JSON.stringify({ error: "Model name is required. Configure the model env var or set it in advanced settings." }),
             { status: 400, headers: { "Content-Type": "application/json" } }
         );
     }
 
-    const ai = new GoogleGenAI({ apiKey });
-    const GEMINI_MODEL = model;
+    const ai = agentConfig.provider === "gemini"
+        ? createGeminiClient(agentConfig.apiKey)
+        : null;
 
-    getOrCreateSession(sessionId);
+    getOrCreateSession(sessionId, message);
+    updateSession(sessionId, { userQuery: message, status: "active" });
     const workspaceContext = getWorkspaceSummary(sessionId);
+    const skillContext = getResearchSkillPrompt();
+    const userLanguageInstruction = /[㐀-鿿]/.test(message)
+        ? "The user's question is Chinese. Use English for all internal planning, tool calls, search queries, reading notes, and research notebook updates. Produce only the final user-facing answer in Chinese."
+        : "The user's question is not Chinese. Use English for internal planning, tool calls, search queries, reading notes, research notebook updates, and the final user-facing answer.";
 
     // Workspace context goes into system instruction, NOT the user message.
     // This prevents the model from confusing old research notes with the new question.
-    const dynamicSystemPrompt = workspaceContext
-        ? `${SYSTEM_PROMPT}\n\n---\n\n${workspaceContext}`
-        : SYSTEM_PROMPT;
+    const dynamicSystemPrompt = [
+        SYSTEM_PROMPT,
+        userLanguageInstruction,
+        skillContext,
+        "---",
+        workspaceContext,
+    ]
+        .filter(Boolean)
+        .join("\n\n");
 
     // Build contents array from history
     const contents: Array<{
@@ -214,6 +178,14 @@ export async function POST(req: NextRequest) {
         role: "user",
         parts: [{ text: message }],
     });
+
+    const openAIContents: OpenAIMessage[] = [
+        ...history.map((msg) => ({
+            role: msg.role === "model" ? "assistant" as const : "user" as const,
+            content: msg.text,
+        })),
+        { role: "user", content: message },
+    ];
 
     // Create streaming response
     const stream = new ReadableStream({
@@ -237,20 +209,138 @@ export async function POST(req: NextRequest) {
                     const phaseTools = getPhaseTools(phase);
                     const phaseHint = getPhaseHint(phase);
 
+                    if (agentConfig.provider === "openai") {
+                        let response;
+                        for (let retry = 0; retry < 3; retry++) {
+                            try {
+                                response = await callOpenAICompatible({
+                                    config: agentConfig,
+                                    system: dynamicSystemPrompt + phaseHint,
+                                    messages: openAIContents,
+                                    tools: phaseTools,
+                                    sessionId,
+                                });
+                                break;
+                            } catch (retryErr: unknown) {
+                                const msg = retryErr instanceof Error ? retryErr.message : "";
+                                const isRetryable =
+                                    msg.includes("429") ||
+                                    msg.includes("quota") ||
+                                    msg.includes("rate") ||
+                                    msg.includes("timeout") ||
+                                    msg.includes("503");
+
+                                if (isRetryable && retry < 2) {
+                                    const waitMs = 5000 * (retry + 1);
+                                    send({
+                                        type: "status",
+                                        message: `OpenAI-compatible API rate limited. Retrying in ${Math.ceil(waitMs / 1000)}s (${retry + 1}/3)...`,
+                                    });
+                                    await new Promise((r) => setTimeout(r, waitMs));
+                                    continue;
+                                }
+                                throw retryErr;
+                            }
+                        }
+
+                        if (!response) {
+                            send({ type: "error", error: "OpenAI-compatible API call failed after retries." });
+                            break;
+                        }
+
+                        if (response.toolCalls.length > 0) {
+                            openAIContents.push(response.assistantMessage);
+
+                            for (const toolCall of response.toolCalls) {
+                                send({
+                                    type: "tool_call",
+                                    tool: toolCall.name,
+                                    args: toolCall.args,
+                                });
+
+                                const toolResult = executeTool(
+                                    toolCall.name,
+                                    toolCall.args,
+                                    sessionId
+                                );
+
+                                const hasError = "error" in (toolResult.result || {});
+
+                                send({
+                                    type: "tool_result",
+                                    tool: toolCall.name,
+                                    success: !hasError,
+                                });
+
+                                if (!hasError) {
+                                    phase = phaseAfterTool(
+                                        phase,
+                                        toolCall.name,
+                                        toolResult.result
+                                    );
+                                }
+
+                                if (["record_reading", "update_research_notes", "remove_reference", "load_full_text", "load_chapter", "decide_continue_or_answer"].includes(toolCall.name)) {
+                                    send({
+                                        type: "workspace",
+                                        workspace: getWorkspaceSnapshot(sessionId),
+                                    });
+                                }
+
+                                openAIContents.push({
+                                    role: "tool",
+                                    tool_call_id: toolCall.id,
+                                    content: JSON.stringify(toolResult.result),
+                                });
+                            }
+
+                            continue;
+                        }
+
+                        if (phase === "must_read" || phase === "must_record" || phase === "must_notes" || phase === "must_decide") {
+                            const nudge =
+                                phase === "must_read"
+                                    ? "You need to load one minimum full-text unit before answering. For books, call get_document_detail and load_chapter; for papers, call load_full_text. Keep all tool arguments and internal notes in English."
+                                    : phase === "must_record"
+                                        ? "You have loaded the full text. Call record_reading to save the reading findings in English before continuing."
+                                        : phase === "must_notes"
+                                            ? "Call update_research_notes to update the research notebook in English before continuing."
+                                            : "Call decide_continue_or_answer before producing the final answer. Keep the decision rationale in English.";
+
+                            openAIContents.push(response.assistantMessage);
+                            openAIContents.push({ role: "user", content: nudge });
+                            continue;
+                        }
+
+                        if (response.text) {
+                            persistFinalAnswer(sessionId, response.text);
+                            const chunkSize = 60;
+                            for (let i = 0; i < response.text.length; i += chunkSize) {
+                                const chunk = response.text.slice(i, i + chunkSize);
+                                send({ type: "text", content: chunk });
+                                await new Promise((r) => setTimeout(r, 15));
+                            }
+                        }
+
+                        send({
+                            type: "workspace",
+                            workspace: getWorkspaceSnapshot(sessionId),
+                        });
+
+                        send({ type: "done" });
+                        break;
+                    }
+
                     // Call Gemini with retry (handles UNAVAILABLE + RESOURCE_EXHAUSTED)
                     let response;
                     for (let retry = 0; retry < 3; retry++) {
                         try {
-                            response = await ai.models.generateContent({
-                                model: GEMINI_MODEL,
+                            response = await callGemini({
+                                ai: ai!,
+                                model: agentConfig.model,
                                 contents: loopContents,
-                                config: {
-                                    systemInstruction: dynamicSystemPrompt + phaseHint,
-                                    tools: [{ functionDeclarations: phaseTools }],
-                                    thinkingConfig: {
-                                        thinkingLevel: "high" as import("@google/genai").ThinkingLevel,
-                                    },
-                                },
+                                systemInstruction: dynamicSystemPrompt + phaseHint,
+                                tools: phaseTools,
                             });
                             break;
                         } catch (retryErr: unknown) {
@@ -262,15 +352,14 @@ export async function POST(req: NextRequest) {
                                 msg.includes("quota");
 
                             if (isRetryable && retry < 2) {
-                                // Extract retryDelay from error (e.g. "retryDelay":"24s" or "Please retry in 24.69s")
-                                let waitMs = 5000 * (retry + 1); // default backoff
+                                let waitMs = 5000 * (retry + 1);
                                 const delayMatch = msg.match(/(?:retryDelay|retry in)\D*([\d.]+)\s*s/i);
                                 if (delayMatch) {
                                     waitMs = Math.min(60000, Math.ceil(parseFloat(delayMatch[1]) * 1000));
                                 }
                                 send({
                                     type: "status",
-                                    message: `⏳ API 限速，等待 ${Math.ceil(waitMs / 1000)} 秒后重试 (${retry + 1}/3)...`,
+                                    message: `API rate limited. Retrying in ${Math.ceil(waitMs / 1000)}s (${retry + 1}/3)...`,
                                 });
                                 await new Promise((r) => setTimeout(r, waitMs));
                                 continue;
@@ -280,13 +369,13 @@ export async function POST(req: NextRequest) {
                     }
 
                     if (!response) {
-                        send({ type: "error", error: "API 调用失败（重试3次后）" });
+                        send({ type: "error", error: "API call failed after 3 retries." });
                         break;
                     }
 
                     const candidate = response.candidates?.[0];
                     if (!candidate?.content?.parts) {
-                        send({ type: "error", error: "模型未返回内容" });
+                        send({ type: "error", error: "Model returned no content." });
                         break;
                     }
 
@@ -324,28 +413,15 @@ export async function POST(req: NextRequest) {
 
                             // ─── Workflow phase transitions ───────────
                             if (!hasError) {
-                                switch (fc.name) {
-                                    case "search_library": {
-                                        const total = (toolResult.result as Record<string, unknown>).total as number;
-                                        if (total > 0) {
-                                            phase = "must_read";
-                                        }
-                                        break;
-                                    }
-                                    case "load_full_text":
-                                        phase = "must_record";
-                                        break;
-                                    case "record_reading":
-                                        phase = "must_notes";
-                                        break;
-                                    case "update_research_notes":
-                                        phase = "can_decide";
-                                        break;
-                                }
+                                phase = phaseAfterTool(
+                                    phase,
+                                    fc.name!,
+                                    toolResult.result
+                                );
                             }
 
                             // Push workspace update after workspace-affecting tools
-                            if (["record_reading", "update_research_notes", "remove_reference", "load_full_text"].includes(fc.name!)) {
+                            if (["record_reading", "update_research_notes", "remove_reference", "load_full_text", "load_chapter", "decide_continue_or_answer"].includes(fc.name!)) {
                                 send({
                                     type: "workspace",
                                     workspace: getWorkspaceSnapshot(sessionId),
@@ -377,15 +453,17 @@ export async function POST(req: NextRequest) {
 
                     // ─── No function calls → model returned text ──────
                     // If we're in a forced phase, re-prompt instead of outputting
-                    if (phase === "must_read" || phase === "must_record" || phase === "must_notes") {
+                    if (phase === "must_read" || phase === "must_record" || phase === "must_notes" || phase === "must_decide") {
                         // Model tried to answer without completing the workflow.
                         // Add a nudge and loop once more.
                         const nudge =
                             phase === "must_read"
-                                ? "你需要先使用 load_full_text 加载并阅读至少一篇文献后才能回答。请选择一篇相关文献加载全文。"
+                                ? "You need to load one minimum full-text unit before answering. For books/textbooks, call get_document_detail and then load_chapter; for papers, call load_full_text. Keep all tool arguments and internal notes in English."
                                 : phase === "must_record"
-                                    ? "你已加载全文，请使用 record_reading 记录你的阅读发现。"
-                                    : "请使用 update_research_notes 更新你的研究笔记后再继续。";
+                                    ? "You have loaded the full text. Call record_reading to save English reading findings."
+                                    : phase === "must_notes"
+                                        ? "Call update_research_notes to update the research notebook in English before continuing."
+                                        : "Call decide_continue_or_answer before producing the final answer. Keep the decision rationale in English.";
 
                         loopContents.push(
                             candidate.content as { role: string; parts: Array<{ text: string }> }
@@ -411,6 +489,7 @@ export async function POST(req: NextRequest) {
                             .join("") || "";
                     }
                     if (text) {
+                        persistFinalAnswer(sessionId, text);
                         const chunkSize = 60;
                         for (let i = 0; i < text.length; i += chunkSize) {
                             const chunk = text.slice(i, i + chunkSize);
@@ -433,7 +512,7 @@ export async function POST(req: NextRequest) {
                     send({
                         type: "text",
                         content:
-                            "\n\n⚠️ Agent 达到了最大工具调用次数限制，已基于已有信息生成回答。",
+                            "\n\nAgent reached the maximum tool-call limit and generated an answer from the available evidence.",
                     });
                     send({
                         type: "workspace",

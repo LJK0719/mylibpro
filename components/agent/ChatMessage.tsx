@@ -1,30 +1,40 @@
 "use client";
 
-export interface ToolCall {
-    name: string;
-    args: Record<string, unknown>;
-    status: "running" | "done" | "error";
-}
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import type { Message, ToolCall } from "@/lib/types/chat";
+import { useLanguage } from "@/components/common/LanguageProvider";
 
-export interface Message {
-    id: string;
-    role: "user" | "agent";
-    content: string;
-    timestamp: string;
-    toolCalls?: ToolCall[];
-}
+export type { Message, ToolCall } from "@/lib/types/chat";
 
 const TOOL_LABELS: Record<string, { label: string; icon: string }> = {
     search_library: { label: "搜索图书馆", icon: "🔍" },
     load_full_text: { label: "加载全文", icon: "📖" },
+    load_chapter: { label: "加载章节", icon: "⚙️" },
     get_document_detail: { label: "查看文献详情", icon: "📋" },
     record_reading: { label: "记录阅读发现", icon: "✍️" },
     update_research_notes: { label: "更新研究笔记", icon: "📝" },
+    decide_continue_or_answer: { label: "判断是否回答", icon: "⚙️" },
     remove_reference: { label: "移除参考文献", icon: "🗑️" },
 };
 
+const TOOL_LABELS_EN: Record<string, { label: string; icon: string }> = {
+    search_library: { label: "Search library", icon: "🔍" },
+    load_full_text: { label: "Load full text", icon: "📖" },
+    load_chapter: { label: "Load chapter", icon: "⚙️" },
+    get_document_detail: { label: "View document detail", icon: "📋" },
+    record_reading: { label: "Record reading", icon: "✍️" },
+    update_research_notes: { label: "Update notes", icon: "📝" },
+    decide_continue_or_answer: { label: "Decide next step", icon: "⚙️" },
+    remove_reference: { label: "Remove reference", icon: "🗑️" },
+};
+
 function ToolCallCard({ tc }: { tc: ToolCall }) {
-    const info = TOOL_LABELS[tc.name] || { label: tc.name, icon: "⚙️" };
+    const { language } = useLanguage();
+    const labels = language === "zh" ? TOOL_LABELS : TOOL_LABELS_EN;
+    const info = labels[tc.name] || { label: tc.name, icon: "⚙️" };
     const statusClass =
         tc.status === "running"
             ? "tool-card-running"
@@ -32,17 +42,17 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
                 ? "tool-card-done"
                 : "tool-card-error";
 
-    // Build description from args
     let desc = "";
     if (tc.name === "search_library" && tc.args.query) {
-        desc = `关键词: ${tc.args.query}`;
-        if (tc.args.discipline) desc += ` · 学科: ${tc.args.discipline}`;
-        if (tc.args.type) desc += ` · 类型: ${tc.args.type}`;
+        desc = language === "zh" ? `关键词: ${tc.args.query}` : `Query: ${tc.args.query}`;
+        if (tc.args.discipline) desc += language === "zh" ? ` · 学科: ${tc.args.discipline}` : ` · Discipline: ${tc.args.discipline}`;
+        if (tc.args.type) desc += language === "zh" ? ` · 类型: ${tc.args.type}` : ` · Type: ${tc.args.type}`;
     } else if (
-        (tc.name === "load_full_text" || tc.name === "get_document_detail") &&
+        (tc.name === "load_full_text" || tc.name === "load_chapter" || tc.name === "get_document_detail") &&
         tc.args.document_id
     ) {
         desc = `ID: ${tc.args.document_id}`;
+        if (tc.args.chapter_file_name) desc += ` · ${tc.args.chapter_file_name}`;
     } else if (tc.name === "record_reading" && tc.args.document_id) {
         desc = `${tc.args.document_id}`;
         if (tc.args.key_findings) {
@@ -50,10 +60,13 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
             desc = findings.length > 60 ? findings.substring(0, 60) + "..." : findings;
         }
     } else if (tc.name === "update_research_notes") {
-        desc = tc.args.mode === "replace" ? "替换笔记" : "追加笔记";
+        desc = tc.args.mode === "replace" ? (language === "zh" ? "替换笔记" : "Replace notes") : (language === "zh" ? "追加笔记" : "Append notes");
     } else if (tc.name === "remove_reference" && tc.args.document_id) {
-        desc = `移除: ${tc.args.document_id}`;
+        desc = language === "zh" ? `移除: ${tc.args.document_id}` : `Remove: ${tc.args.document_id}`;
         if (tc.args.reason) desc = String(tc.args.reason).substring(0, 50);
+    } else if (tc.name === "decide_continue_or_answer") {
+        desc = `${tc.args.decision || "decide"}`;
+        if (tc.args.reason) desc += ` · ${String(tc.args.reason).substring(0, 50)}`;
     }
 
     return (
@@ -61,9 +74,7 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
             <div className="flex items-center gap-2">
                 <span className="text-sm">{info.icon}</span>
                 <span className="text-xs font-medium">{info.label}</span>
-                {tc.status === "running" && (
-                    <div className="tool-spinner" />
-                )}
+                {tc.status === "running" && <div className="tool-spinner" />}
                 {tc.status === "done" && (
                     <span className="text-xs text-emerald-500">✓</span>
                 )}
@@ -79,169 +90,107 @@ function ToolCallCard({ tc }: { tc: ToolCall }) {
 }
 
 /**
- * Simple Markdown rendering — handles headings, bold, italic,
- * inline code, code blocks, lists, links, and blockquotes.
+ * Normalize LaTeX delimiters so remark-math (which only understands
+ * `$...$` / `$$...$$`) also handles common backslash escapes:
+ *
+ *   \( ... \)   →  $ ... $
+ *   \[ ... \]   →  $$ ... $$
+ *
+ * Conversion is regex based but skips fenced code blocks and inline
+ * code spans so we don't accidentally rewrite literal source code.
  */
-function renderMarkdown(text: string): React.ReactNode {
-    const lines = text.split("\n");
-    const elements: React.ReactNode[] = [];
-    let inCodeBlock = false;
-    let codeLang = "";
-    let codeLines: string[] = [];
-    let key = 0;
+function normalizeMath(input: string): string {
+    if (!input) return input;
 
-    function inlineFormat(line: string): React.ReactNode {
-        // Split on code backticks first to avoid formatting inside code
-        const parts = line.split(/(`[^`]+`)/g);
-        return parts.map((part, i) => {
-            if (part.startsWith("`") && part.endsWith("`")) {
-                return (
-                    <code key={i} className="inline-code">
-                        {part.slice(1, -1)}
-                    </code>
-                );
+    // Split on ``` fences, transform only the non-code segments.
+    const segments = input.split(/(```[\s\S]*?```|`[^`\n]*`)/g);
+    return segments
+        .map((seg) => {
+            if (!seg) return seg;
+            if (seg.startsWith("```") || (seg.startsWith("`") && seg.endsWith("`"))) {
+                return seg;
             }
-            // Bold
-            let processed: string | React.ReactNode = part;
-            if (typeof processed === "string" && /\*\*(.+?)\*\*/g.test(processed)) {
-                const segs = processed.split(/\*\*(.+?)\*\*/g);
-                return segs.map((s, j) =>
-                    j % 2 === 1 ? (
-                        <strong key={`${i}-${j}`}>{s}</strong>
-                    ) : (
-                        <span key={`${i}-${j}`}>{s}</span>
-                    )
-                );
-            }
-            return <span key={i}>{processed}</span>;
-        });
-    }
-
-    for (const line of lines) {
-        key++;
-
-        // Code blocks
-        if (line.startsWith("```")) {
-            if (inCodeBlock) {
-                elements.push(
-                    <pre key={key} className="code-block">
-                        <div className="code-block-header">{codeLang || "code"}</div>
-                        <code>{codeLines.join("\n")}</code>
-                    </pre>
-                );
-                inCodeBlock = false;
-                codeLines = [];
-                codeLang = "";
-            } else {
-                inCodeBlock = true;
-                codeLang = line.slice(3).trim();
-            }
-            continue;
-        }
-
-        if (inCodeBlock) {
-            codeLines.push(line);
-            continue;
-        }
-
-        // Empty line
-        if (!line.trim()) {
-            elements.push(<div key={key} className="h-2" />);
-            continue;
-        }
-
-        // Headings
-        if (line.startsWith("#### ")) {
-            elements.push(
-                <h4 key={key} className="text-sm font-semibold mt-3 mb-1">
-                    {inlineFormat(line.slice(5))}
-                </h4>
-            );
-            continue;
-        }
-        if (line.startsWith("### ")) {
-            elements.push(
-                <h3 key={key} className="text-sm font-bold mt-4 mb-1">
-                    {inlineFormat(line.slice(4))}
-                </h3>
-            );
-            continue;
-        }
-        if (line.startsWith("## ")) {
-            elements.push(
-                <h2 key={key} className="text-base font-bold mt-4 mb-2">
-                    {inlineFormat(line.slice(3))}
-                </h2>
-            );
-            continue;
-        }
-        if (line.startsWith("# ")) {
-            elements.push(
-                <h1 key={key} className="text-lg font-bold mt-4 mb-2">
-                    {inlineFormat(line.slice(2))}
-                </h1>
-            );
-            continue;
-        }
-
-        // Blockquote
-        if (line.startsWith("> ")) {
-            elements.push(
-                <blockquote
-                    key={key}
-                    className="border-l-2 border-primary/30 pl-3 text-muted-foreground text-sm italic my-1"
-                >
-                    {inlineFormat(line.slice(2))}
-                </blockquote>
-            );
-            continue;
-        }
-
-        // Unordered list
-        if (/^[-*] /.test(line)) {
-            elements.push(
-                <div key={key} className="flex gap-2 text-sm my-0.5 pl-1">
-                    <span className="text-muted-foreground">•</span>
-                    <span>{inlineFormat(line.slice(2))}</span>
-                </div>
-            );
-            continue;
-        }
-
-        // Ordered list
-        const olMatch = line.match(/^(\d+)\.\s/);
-        if (olMatch) {
-            elements.push(
-                <div key={key} className="flex gap-2 text-sm my-0.5 pl-1">
-                    <span className="text-muted-foreground min-w-[1.2em] text-right">
-                        {olMatch[1]}.
-                    </span>
-                    <span>{inlineFormat(line.slice(olMatch[0].length))}</span>
-                </div>
-            );
-            continue;
-        }
-
-        // Horizontal rule
-        if (/^---+$/.test(line.trim())) {
-            elements.push(
-                <hr key={key} className="border-border/30 my-3" />
-            );
-            continue;
-        }
-
-        // Normal paragraph
-        elements.push(
-            <p key={key} className="text-sm leading-relaxed my-0.5">
-                {inlineFormat(line)}
-            </p>
-        );
-    }
-
-    return elements;
+            // Display math \[ ... \]  (allow newlines inside)
+            seg = seg.replace(/\\\[([\s\S]+?)\\\]/g, (_m, inner) => `\n$$\n${inner.trim()}\n$$\n`);
+            // Inline math \( ... \)
+            seg = seg.replace(/\\\(([\s\S]+?)\\\)/g, (_m, inner) => `$${inner.trim()}$`);
+            return seg;
+        })
+        .join("");
 }
 
-export function ChatMessage({ message }: { message: Message }) {
+function MarkdownContent({ text }: { text: string }) {
+    const normalized = normalizeMath(text);
+    return (
+        <div className="markdown-body">
+            <ReactMarkdown
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={{
+                    code({ className, children, ...props }) {
+                        const isBlock = /language-/.test(className || "");
+                        if (isBlock) {
+                            const lang = (className || "").replace(/.*language-/, "");
+                            return (
+                                <pre className="code-block">
+                                    <div className="code-block-header">{lang || "code"}</div>
+                                    <code className={className} {...props}>
+                                        {children}
+                                    </code>
+                                </pre>
+                            );
+                        }
+                        return (
+                            <code className="inline-code" {...props}>
+                                {children}
+                            </code>
+                        );
+                    },
+                    a({ href, children, ...props }) {
+                        return (
+                            <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary underline underline-offset-2"
+                                {...props}
+                            >
+                                {children}
+                            </a>
+                        );
+                    },
+                    table({ children, ...props }) {
+                        return (
+                            <div className="overflow-x-auto my-2">
+                                <table className="md-table" {...props}>
+                                    {children}
+                                </table>
+                            </div>
+                        );
+                    },
+                }}
+            >
+                {normalized}
+            </ReactMarkdown>
+        </div>
+    );
+}
+
+interface ChatMessageProps {
+    message: Message;
+    /** When true, show the regenerate action (only on the last agent message). */
+    canRegenerate?: boolean;
+    onRegenerate?: () => void;
+    onCopy?: () => void;
+}
+
+export function ChatMessage({
+    message,
+    canRegenerate,
+    onRegenerate,
+    onCopy,
+}: ChatMessageProps) {
+    const { t } = useLanguage();
     const isUser = message.role === "user";
 
     if (isUser) {
@@ -254,9 +203,8 @@ export function ChatMessage({ message }: { message: Message }) {
         );
     }
 
-    // Agent message
     return (
-        <div className="flex gap-3">
+        <div className="flex gap-3 group">
             <div className="w-7 h-7 rounded-lg agent-avatar flex-shrink-0 flex items-center justify-center mt-1">
                 <svg
                     width="14"
@@ -278,7 +226,6 @@ export function ChatMessage({ message }: { message: Message }) {
                 </svg>
             </div>
             <div className="flex-1 min-w-0">
-                {/* Tool calls */}
                 {message.toolCalls && message.toolCalls.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-3">
                         {message.toolCalls.map((tc, i) => (
@@ -287,9 +234,43 @@ export function ChatMessage({ message }: { message: Message }) {
                     </div>
                 )}
 
-                {/* Text content */}
                 {message.content && (
-                    <div className="agent-bubble">{renderMarkdown(message.content)}</div>
+                    <div className="agent-bubble">
+                        <MarkdownContent text={message.content} />
+                    </div>
+                )}
+
+                {(canRegenerate || onCopy) && message.content && (
+                    <div className="flex items-center gap-2 mt-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        {onCopy && (
+                            <button
+                                type="button"
+                                onClick={onCopy}
+                                className="msg-action-btn"
+                                title={t("agent.copy")}
+                            >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                                </svg>
+                                <span>{t("agent.copy")}</span>
+                            </button>
+                        )}
+                        {canRegenerate && onRegenerate && (
+                            <button
+                                type="button"
+                                onClick={onRegenerate}
+                                className="msg-action-btn"
+                                title={t("agent.regenerate")}
+                            >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M21 12a9 9 0 1 1-3-6.7" />
+                                    <path d="M21 4v5h-5" />
+                                </svg>
+                                <span>{t("agent.regenerate")}</span>
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
         </div>

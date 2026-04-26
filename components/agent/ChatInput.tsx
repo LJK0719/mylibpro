@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useLanguage } from "@/components/common/LanguageProvider";
 
 interface ChatInputProps {
     onSend: (text: string) => void;
@@ -8,6 +9,7 @@ interface ChatInputProps {
 }
 
 export function ChatInput({ onSend, isLoading }: ChatInputProps) {
+    const { t } = useLanguage();
     const [text, setText] = useState("");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -45,7 +47,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="输入你的学术问题..."
+                    placeholder={t("agent.inputPlaceholder")}
                     disabled={isLoading}
                     rows={1}
                     className="chat-textarea"
@@ -54,7 +56,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                     onClick={handleSubmit}
                     disabled={!text.trim() || isLoading}
                     className="chat-send-btn"
-                    title="发送 (Enter)"
+                    title="Send (Enter)"
                 >
                     {isLoading ? (
                         <div className="tool-spinner" />
@@ -76,7 +78,7 @@ export function ChatInput({ onSend, isLoading }: ChatInputProps) {
                 </button>
             </div>
             <p className="text-[10px] text-muted-foreground/50 text-center mt-2">
-                按 Enter 发送 · Shift + Enter 换行 · AI 助手基于图书馆文献回答
+                {t("agent.inputHelp")}
             </p>
         </div>
     );

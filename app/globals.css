@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+/* KaTeX stylesheet is loaded via <link> in app/layout.tsx — importing it
+ * here makes Turbopack try to resolve KaTeX's relative font URLs out of
+ * the source tree, which fails. */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -288,6 +291,12 @@
   background: oklch(0.6 0.12 160 / 10%);
   color: oklch(0.72 0.1 160);
   border: 1px solid oklch(0.6 0.12 160 / 22%);
+}
+
+.tag-chip-neutral {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
 }
 
 .tag-chip:hover {
@@ -669,3 +678,153 @@
 .nav-link:hover {
   color: var(--primary);
 }
+
+/* ─── Markdown body inside agent bubbles ─── */
+.markdown-body {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--foreground);
+}
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body p { margin: 0.4em 0; }
+.markdown-body h1 { font-size: 1.15rem; font-weight: 700; margin: 1em 0 0.4em; }
+.markdown-body h2 { font-size: 1.05rem; font-weight: 700; margin: 0.9em 0 0.4em; }
+.markdown-body h3 { font-size: 0.95rem; font-weight: 600; margin: 0.8em 0 0.3em; }
+.markdown-body h4 { font-size: 0.9rem; font-weight: 600; margin: 0.7em 0 0.2em; }
+.markdown-body ul,
+.markdown-body ol { padding-left: 1.4em; margin: 0.4em 0; }
+.markdown-body ul { list-style: disc; }
+.markdown-body ol { list-style: decimal; }
+.markdown-body li { margin: 0.15em 0; }
+.markdown-body blockquote {
+  border-left: 3px solid var(--primary);
+  padding: 0.1em 0.9em;
+  color: var(--muted-foreground);
+  margin: 0.6em 0;
+  background: oklch(0.65 0.15 250 / 4%);
+  border-radius: 0 6px 6px 0;
+}
+.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 0.9em 0; }
+.markdown-body strong { font-weight: 600; }
+.markdown-body em { font-style: italic; }
+.markdown-body .md-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+.markdown-body .md-table th,
+.markdown-body .md-table td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.markdown-body .md-table thead { background: var(--muted); }
+
+/* KaTeX tweaks — match body font size and prevent overflow on inline math */
+.markdown-body .katex { font-size: 1em; }
+.markdown-body .katex-display {
+  margin: 0.7em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2em 0;
+}
+
+/* ─── Per-message action buttons (copy / regenerate) ─── */
+.msg-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 11px;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.msg-action-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: oklch(0.65 0.15 250 / 6%);
+}
+
+/* ─── Conversation history sidebar ─── */
+.conversation-sidebar {
+  width: 250px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--background);
+}
+
+@media (max-width: 768px) {
+  .conversation-sidebar {
+    position: fixed;
+    left: 0;
+    top: 64px;
+    bottom: 0;
+    z-index: 40;
+    box-shadow: 8px 0 30px oklch(0 0 0 / 12%);
+  }
+}
+
+.conversation-new-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.conversation-new-btn:hover {
+  border-style: solid;
+  border-color: var(--primary);
+  color: var(--primary);
+  background: oklch(0.65 0.15 250 / 5%);
+}
+
+.conversation-item {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.conversation-item:hover {
+  background: var(--muted);
+}
+.conversation-item.active {
+  background: oklch(0.65 0.15 250 / 8%);
+  border-color: oklch(0.65 0.15 250 / 25%);
+}
+.conversation-delete {
+  opacity: 0;
+  padding: 4px;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.conversation-item:hover .conversation-delete,
+.conversation-item.active .conversation-delete { opacity: 1; }
+.conversation-delete:hover { color: var(--destructive); }

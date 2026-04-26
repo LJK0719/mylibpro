@@ -1,0 +1,25 @@
+{
+  "name": "research.read_fulltext_and_note",
+  "requiredTools": ["load_full_text", "record_reading", "remove_reference"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "document_id": { "type": "string" },
+      "chapter_file_name": { "type": "string" },
+      "reading_purpose": { "type": "string" },
+      "focus_questions": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["document_id", "reading_purpose"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "document_id": { "type": "string" },
+      "read_status": { "type": "string" },
+      "key_findings": { "type": "string" },
+      "usefulness": { "type": "string" },
+      "should_keep_active": { "type": "boolean" }
+    },
+    "required": ["document_id", "read_status", "key_findings", "usefulness"]
+  }
+}

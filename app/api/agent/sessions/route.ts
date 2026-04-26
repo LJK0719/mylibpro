@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSession, deleteSession } from "@/lib/workspace";
+import { createSession, deleteSession } from "@/lib/agent/workspace";
 
 export async function POST() {
     const sessionId = `session-${Date.now()}-${Math.random()

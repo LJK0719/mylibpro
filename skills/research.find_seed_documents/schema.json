@@ -1,0 +1,22 @@
+{
+  "name": "research.find_seed_documents",
+  "requiredTools": ["search_library", "get_document_detail"],
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string" },
+      "preferred_types": { "type": "array", "items": { "type": "string" } },
+      "discipline": { "type": "string" },
+      "max_candidates": { "type": "integer", "default": 10 }
+    },
+    "required": ["query"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "candidate_documents": { "type": "array" },
+      "next_action": { "type": "string" }
+    },
+    "required": ["candidate_documents", "next_action"]
+  }
+}
