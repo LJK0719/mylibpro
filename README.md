@@ -1,323 +1,262 @@
-# 📚 MyLibPro — 智能个人学术图书馆
+# MyLibPro
 
-> 一个融合 **AI 深度研究** 与 **高性能全文检索** 的个人学术文献管理系统，基于 Next.js 15 与 Google Gemini 构建。
+English | [简体中文](./README.zh-CN.md)
 
----
+MyLibPro is a local-first academic library app built with Next.js App Router, React, TypeScript, Tailwind CSS, and SQLite. It stores document metadata in SQLite, indexes it with FTS5, and can run an AI research assistant over local Markdown full text.
 
-## 🌟 项目简介
+The project is designed for personal research workflows: browse a library, manage reading status and shelves, inspect document details, and ask the agent questions that must be grounded in loaded full-text evidence.
 
-MyLibPro 是一款专为学术研究者设计的**私有数字图书馆**系统。它不仅提供美观的图书浏览与检索界面，更通过接入 Google Gemini 大语言模型，实现了**具备工具调用能力的 AI 研究助手**——让你的 AI 能够自主搜索文献、阅读全文、记录笔记并给出引用自本地藏书的专业答案。
+## Why This App Exists
 
----
+Most library tools stop at cataloging PDFs. Most RAG demos stop at retrieving short chunks. MyLibPro sits in the middle: it keeps the original document collection organized, converts the parts needed for AI work into structured Markdown, and forces the research agent to read evidence units before it writes conclusions.
 
-## ✨ 核心功能
+The important split is:
 
-### 📖 图书馆主页
-- **三种视图模式**：网格视图、列表视图、封面视图，自由切换
-- **实时全文搜索**：输入防抖（400ms）+ SQLite FTS5 全文索引，支持书名、作者、关键词、摘要联合检索
-- **多维度筛选**：按文献类型（图书/论文）、学科、子领域筛选
-- **灵活排序**：支持最新优先、最早优先、书名 A-Z/Z-A、篇幅大小
-- **分页浏览**：智能椭圆分页器，每页数量随视图模式自适应
+- PDF is the archival format. It preserves the source document, layout, pagination, figures, publisher formatting, and citation fidelity.
+- Markdown is the working format. It is searchable, diffable, easy to inspect, and much easier for LLMs to read than raw PDF bytes or page images.
 
-### 🤖 AI 研究助手（Agent）
-- **流式对话**：响应内容实时逐字流出，体验流畅
-- **工具调用可视化**：实时展示 AI 正在调用哪些工具及执行状态
-- **工作区面板**：直观展示当前会话已加载的参考文献、阅读历史与研究笔记
-- **多轮对话**：完整保留历史上下文，支持追问与深度研究
+In practice, a useful AI-era academic library needs both. Keep the PDF as the source of record, and keep a Markdown version next to it for search, citation review, agent reading, note extraction, and downstream automation.
 
-### 📦 数据管理
-- **元数据导入**：扫描 `data/book` 与 `data/paper` 目录下各文献的 `metadata.json` 并批量入库
-- **封面生成**：Python 脚本自动生成图书封面
-- **图书详情页**：独立路由展示单本文献的完整信息
+## Features
 
----
+- Library browsing with search, discipline filters, reading status, favorites, and shelves.
+- Document detail pages for books and papers.
+- Local SQLite database via `better-sqlite3`, with automatic schema migration and WAL mode.
+- Markdown-first data model for full-text research.
+- AI assistant with a state-machine enforced reading workflow.
+- Gemini and OpenAI-compatible provider support.
+- Clear separation between source PDFs, parsed Markdown, metadata, and generated covers.
 
-## 🏗️ 技术架构
+## AI Research Assistant
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    浏览器（客户端）                           │
-│  ┌──────────────┐  ┌──────────────────────────────────────┐ │
-│  │ 图书馆主页    │  │          AI 研究助手页面              │ │
-│  │ /            │  │          /agent                      │ │
-│  │ - 搜索/筛选  │  │ - 流式 SSE 对话                      │ │
-│  │ - 分页浏览   │  │ - 工具调用可视化                      │ │
-│  │ - 三种视图   │  │ - 工作区面板（参考文献 / 笔记）       │ │
-│  └──────┬───────┘  └──────────────┬───────────────────────┘ │
-└─────────┼────────────────────────┼───────────────────────────┘
-          │ REST API               │ Streaming JSON
-          ▼                        ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Next.js 服务端（App Router）                 │
-│  ┌────────────────┐  ┌─────────────────────────────────────┐│
-│  │ /api/books     │  │ /api/agent/chat                     ││
-│  │ /api/disciplines│  │ - Gemini Function Calling 循环      ││
-│  │                │  │ - 工具分发 (executeTool)            ││
-│  └───────┬────────┘  └──────────┬──────────────────────────┘│
-│          │                      │                            │
-│  ┌───────▼──────────────────────▼───────────────────────┐   │
-│  │                    lib/ 服务层                        │   │
-│  │  db.ts           agent/workspace/   agent/tools/     │   │
-│  │  - SQLite 连接   - 会话状态管理     - 每工具一文件   │   │
-│  │  - FTS5 索引     - 活跃引用追踪     - executeTool 分发│   │
-│  └───────┬──────────────────────────────────────────────┘   │
-└──────────┼──────────────────────────────────────────────────┘
-           │
-           ▼
-┌─────────────────────────┐    ┌───────────────────────────┐
-│  SQLite (library.db)    │    │  文件系统 (../data/)       │
-│  - documents 主表       │    │  - book/{id}/metadata.json │
-│  - documents_fts 虚表   │    │  - book/{id}/content.md    │
-│  - WAL 模式             │    │  - paper/{id}/...          │
-└─────────────────────────┘    └───────────────────────────┘
+`Vectorless knowledge base` `Full-text-first research`
+
+The research assistant is the main reason this project is more than a library UI. It is built for evidence-based academic work, not for quick answers over loose search results.
+
+Instead of doing a generic "retrieve top-k chunks and answer" pass, the assistant works through a visible research loop:
+
+```text
+search catalog
+  -> load full Markdown evidence
+  -> record reading
+  -> update research notes
+  -> decide whether to read more or answer
 ```
 
----
+That gives MyLibPro a few practical advantages:
 
-## 🧠 AI Agent 工作原理
+- Search is only used to choose documents. It is not treated as evidence.
+- Papers are read as complete Markdown documents.
+- Books are read chapter by chapter, which keeps context manageable and avoids pretending that an entire textbook was read at once.
+- Every loaded evidence unit has a reading record.
+- Session notes accumulate across documents, so the answer is built from a research trail instead of a single prompt.
+- The agent can release active full text from context while keeping reading history and notes intact.
 
-### Gemini Function Calling 循环
+This is intentionally more disciplined than a normal chatbot. The goal is not to make the model sound confident; the goal is to make it read the library before it writes.
 
-```
-用户提问
-    │
-    ▼
-┌─────────────────────────────────────────────┐
-│         Gemini API (Function Calling)        │
-│   接收：用户消息 + 对话历史 + 工作区状态      │
-│   可用：6 个工具函数声明                      │
-└────────────────────┬────────────────────────┘
-                     │ AI 决定调用工具
-                     ▼
-            ┌──────────────────┐
-            │  工具执行层       │        ← 纯服务端同步执行
-            │  executeTool()   │
-            └────────┬─────────┘
-                     │ 工具结果返回给 Gemini
-                     ▼
-             Gemini 继续思考
-            （可能多轮调用工具）
-                     │
-                     ▼
-              生成最终回答（流式输出）
-                     │
-                     ▼
-         前端 SSE 实时接收渲染
+The workflow is enforced in code by `lib/agent/state-machine.ts` and the chat route:
+
+```text
+initial
+  -> must_read
+  -> must_record
+  -> must_notes
+  -> must_decide
+  -> can_decide
 ```
 
-### 六大工具能力
+Tool availability changes by phase:
 
-| 工具名称 | 类别 | 功能描述 |
-|---|---|---|
-| `search_library` | 🔍 读取 | 在图书馆目录中全文检索，返回元数据列表 |
-| `get_document_detail` | 🔍 读取 | 获取单本文献详情：摘要、目录、引用信息 |
-| `load_full_text` | 🔍 读取 | 加载文献完整 Markdown 全文，自动加入活跃引用 |
-| `record_reading` | ✍️ 写入 | 记录阅读发现：关键结论、阅读目的 |
-| `update_research_notes` | ✍️ 写入 | 更新研究笔记（支持追加/全量替换） |
-| `remove_reference` | ✍️ 写入 | 从活跃引用中移除低相关文献，释放 Token 预算 |
+| Phase | Allowed tools |
+| --- | --- |
+| `initial` | all tools |
+| `must_read` | `get_document_detail`, `load_full_text`, `load_chapter`, `remove_reference`, `decide_continue_or_answer` |
+| `must_record` | `record_reading` |
+| `must_notes` | `update_research_notes` |
+| `must_decide` | `decide_continue_or_answer` |
+| `can_decide` | all tools |
 
-### 会话工作区（Workspace）设计
+Important invariants:
 
-每个对话 Session 维护一份**内存中的工作区状态**，包含三张表：
+- Deep research follows `search -> read full text -> record reading -> update notes -> decide`.
+- Books are read by chapter through `load_chapter`; the whole book is not loaded as one evidence unit.
+- `record_reading` must identify the document, and for books it must also identify the chapter file.
+- Final answers should cite documents that were actually read or are still active in the workspace.
+- `remove_reference` only releases active context. It does not delete reading history, notes, or artifacts.
+- `decide_continue_or_answer` requires at least one reading record and updated notes.
 
-```typescript
-WorkspaceState {
-  activeReferences:  ActiveReference[]      // 当前已加载的文献（含全文）
-  readingHistory:    ReadingHistoryEntry[]   // 历史阅读记录（已读/已移除）
-  researchNotebook:  string                 // AI 研究笔记（Markdown）
-  totalTokens:       number                 // 当前活跃引用的总 Token 用量
-}
-```
+## Tech Stack
 
-- **Token 预算管理**：AI 可自主评估已加载文献的相关性，调用 `remove_reference` 释放 Token 空间，再加载新文献
-- **阅读轨迹记录**：所有阅读行为（包括原因、关键发现）均写入历史，构成完整研究过程
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- shadcn/Radix-style UI primitives
+- lucide-react icons
+- SQLite FTS5 through `better-sqlite3`
+- `@google/genai` plus an OpenAI-compatible provider adapter
 
----
+## Getting Started
 
-## 🗄️ 数据库设计
+Requirements:
 
-### documents 主表
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `document_id` | TEXT PK | 文献唯一标识符 |
-| `type` | TEXT | 文献类型：`book` / `paper` |
-| `title` | TEXT | 书名 / 论文标题 |
-| `authors` | TEXT | 作者列表（JSON 数组字符串） |
-| `year` | INTEGER | 出版年份 |
-| `discipline` | TEXT | 一级学科（JSON 数组） |
-| `subdiscipline` | TEXT | 子领域（JSON 数组） |
-| `keywords` | TEXT | 关键词（JSON 数组） |
-| `abstract` | TEXT | 摘要 |
-| `toc` | TEXT | 目录 |
-| `full_text_path` | TEXT | 全文 Markdown 文件的相对路径 |
-| `token_count` | INTEGER | 全文 Token 数量（用于 Token 预算管理） |
-| `citation_info` | TEXT | 引用信息（可指向 .txt 文件路径） |
-
-### FTS5 全文搜索虚表
-
-```sql
-CREATE VIRTUAL TABLE documents_fts USING fts5(
-  document_id UNINDEXED,
-  title,
-  authors,
-  keywords,
-  abstract,
-  discipline,
-  subdiscipline,
-  content='documents',          -- 内容表关联
-  content_rowid='rowid',
-  tokenize='unicode61'          -- Unicode 分词，支持中英文
-);
-```
-
-通过 **AFTER INSERT / UPDATE / DELETE 触发器**保持 FTS 索引与主表实时同步。查询时使用 `MATCH` 操作符进行高效全文检索，支持多词 OR 查询。
-
----
-
-## 🛠️ 技术栈
-
-### 前端
-| 技术 | 版本 | 用途 |
-|---|---|---|
-| **Next.js** | 16.x (App Router) | 全栈框架，SSR/RSC/API 路由 |
-| **React** | 19.x | UI 构建 |
-| **TypeScript** | 5.x | 类型安全 |
-| **Tailwind CSS** | 4.x | 原子化样式 |
-| **Radix UI** | 1.x | 无障碍 UI 组件原语 |
-| **shadcn/ui** | 3.x | 组件库（基于 Radix + Tailwind） |
-| **Lucide React** | — | 图标库 |
-| **next-themes** | — | 深色/浅色主题切换 |
-
-### 后端
-| 技术 | 版本 | 用途 |
-|---|---|---|
-| **Next.js API Routes** | — | RESTful API + Streaming 端点 |
-| **better-sqlite3** | 12.x | 同步 SQLite 客户端（高性能） |
-| **SQLite FTS5** | — | 全文检索引擎 |
-| **@google/genai** | 1.x | Google Gemini API SDK |
-
-### 工具链 & 脚本
-| 技术 | 用途 |
-|---|---|
-| **tsx** | 直接运行 TypeScript 脚本 |
-| **Python** | 封面图片自动生成 |
-| **ESLint** | 代码质量检查 |
-
----
-
-## 🚀 项目优势
-
-### 1. 本地优先，数据私有
-所有文献数据存储在本地 SQLite 数据库与文件系统中，**无需任何云端数据库订阅**，完整保护学术资料的隐私性。
-
-### 2. AI 具备真实记忆与推理能力
-不同于简单的 RAG（检索增强生成），本系统的 AI Agent 具备**主动规划能力**：
-- 自主决定搜索策略
-- 判断是否需要加载全文（避免无效 Token 消耗）
-- 记录阅读过程，积累研究笔记
-- 主动管理 Token 预算，可处理超大文献集
-
-### 3. 流式响应体验
-API 层采用 **NDJSON 流式传输**（换行分隔 JSON），前端实时解析多类型事件（`text` / `tool_call` / `tool_result` / `workspace`），用户能即时感知 AI 的思考过程，**透明度极高**。
-
-### 4. 搜索性能卓越
-- SQLite FTS5 索引覆盖标题、作者、关键词、摘要、学科等字段
-- 触发器自动维护 FTS 与主表一致性
-- 查询结果毫秒级返回，无需服务器端搜索引擎
-
-### 5. 零运维复杂度
-- 单一 SQLite 文件作为数据库，无需 PostgreSQL 等独立服务
-- Next.js 全栈部署，前后端合一
-- 文献数据通过简单 `metadata.json` 描述，导入流程极简
-
----
-
-## 📁 项目结构
-
-```
-mylibpro/
-├── app/
-│   ├── page.tsx              # 图书馆主页（搜索+浏览）
-│   ├── layout.tsx            # 全局布局（导航栏+主题）
-│   ├── globals.css           # 全局样式（CSS 变量+主题）
-│   ├── agent/
-│   │   └── page.tsx          # AI 研究助手对话界面
-│   ├── books/
-│   │   └── [id]/             # 图书详情页（动态路由）
-│   └── api/
-│       ├── books/route.ts    # GET /api/books  — 文献列表+搜索
-│       ├── disciplines/      # GET /api/disciplines — 筛选元数据
-│       └── agent/
-│           ├── chat/         # POST /api/agent/chat — 流式对话
-│           └── sessions/     # 会话管理端点
-├── components/
-│   ├── BookCard.tsx          # 图书卡片组件（支持三种视图模式）
-│   ├── CoverImage.tsx        # 封面图片组件
-│   ├── ThemeProvider.tsx     # 主题上下文
-│   ├── ThemeToggle.tsx       # 明暗主题切换按钮
-│   ├── agent/
-│   │   ├── ChatMessage.tsx   # 对话消息（含工具调用展示）
-│   │   ├── ChatInput.tsx     # 输入框组件
-│   │   └── WorkspacePanel.tsx# 工作区面板（引用列表+笔记）
-│   └── ui/                   # shadcn/ui 基础组件
-├── lib/
-│   ├── db.ts                 # SQLite 连接 + 表结构 + 类型定义
-│   ├── agent/
-│   │   ├── system-prompt.ts  # Agent 系统提示词
-│   │   ├── state-machine.ts  # 工作流阶段状态机
-│   │   ├── skills.ts         # Skills 加载器
-│   │   ├── tools/            # 每工具一文件 + index.ts 聚合 executeTool
-│   │   ├── workspace/        # 会话工作区状态（内存）
-│   │   └── providers/        # Gemini / OpenAI-compatible 适配器
-│   ├── i18n.ts               # 元数据双语字段归一化
-│   └── utils.ts              # 工具函数
-├── db/
-│   └── library.db            # SQLite 数据库文件
-├── scripts/
-│   ├── import-books.ts       # 批量导入文献元数据
-│   └── generate-covers.ts    # Node 封面生成脚本
-└── public/                   # 静态资源
-```
-
----
-
-## ⚡ 快速开始
-
-### 环境要求
 - Node.js 20+
-- Google Gemini API Key
+- npm
+- SQLite support through the bundled `better-sqlite3` native package
+- An LLM API key if you want to use the research agent
 
-### 1. 安装依赖
+Install dependencies:
 
 ```bash
 npm install
 ```
 
-### 2. 配置环境变量
+Create local config:
 
 ```bash
-# 创建 .env.local 文件
-GEMINI_API_KEY=你的_Google_Gemini_API_Key
+cp .env.example .env.local
 ```
 
-### 3. 准备文献数据
+At minimum, set:
 
-将文献按以下结构放置（位于项目上级目录）：
-
-```
-../data/
-├── book/
-│   └── {书名文件夹}/
-│       ├── metadata.json     # 文献元数据
-│       └── content.md        # 全文（Markdown 格式）
-└── paper/
-    └── {论文文件夹}/
-        ├── metadata.json
-        └── content.md
+```bash
+GEMINI_API_KEY=...
+DATA_ROOT=D:/bookdata/libdata
+DB_PATH=./db/library.db
 ```
 
-`metadata.json` 示例：
+Run the app:
+
+```bash
+npm run dev
+```
+
+Open:
+
+- Library: `http://localhost:3000`
+- Research agent: `http://localhost:3000/agent`
+
+## Library Data Layout
+
+The library is not imported from arbitrary folders. MyLibPro expects a specific directory layout under `DATA_ROOT`.
+
+Current defaults:
+
+- `DATA_ROOT` defaults to `D:\bookdata\libdata` when that path exists.
+- Otherwise it falls back to `../data` relative to the project root.
+- You can override it in `.env.local`.
+
+Top-level layout:
+
+```text
+DATA_ROOT/
+  book/
+    <folder_name>/
+      metadata.json
+      source.pdf              # recommended: original PDF, kept for archive/review
+      content.md              # optional: whole-book Markdown, not loaded by the agent as one unit
+      chapters/
+        01-introduction.md
+        02-related-work.md
+        ...
+  paper/
+    <folder_name>/
+      metadata.json
+      source.pdf              # recommended: original PDF
+      content.md              # required for load_full_text unless full_text_path points elsewhere
+  report/
+    ...                       # not imported by the current script unless support is added
+```
+
+Only `book/` and `paper/` are scanned by the current importer. Additional types can be represented in metadata, but they need importer support before they are discovered automatically.
+
+Book layout:
+
+```text
+DATA_ROOT/book/bishop-prml-2006/
+  metadata.json
+  source.pdf
+  content.md
+  chapters/
+    00-preface.md
+    01-introduction.md
+    02-probability-distributions.md
+```
+
+For books, `chapters/*.md` is the important part for the agent. The importer records the sorted chapter file names into the `chapters` column, and `load_chapter` reads from:
+
+```text
+DATA_ROOT/<type>/<folder_name>/chapters/<chapter_file_name>
+```
+
+Paper layout:
+
+```text
+DATA_ROOT/paper/attention-is-all-you-need-2017/
+  metadata.json
+  source.pdf
+  content.md
+```
+
+For papers and short documents, `load_full_text` reads the Markdown path resolved from metadata. In the common case:
+
+```json
+{
+  "type": "paper",
+  "folder_name": "attention-is-all-you-need-2017",
+  "full_text_path": "paper/attention-is-all-you-need-2017/content.md"
+}
+```
+
+Recommended local convention:
+
+- Keep the original PDF as `source.pdf`.
+- Keep parsed Markdown as `content.md` for papers.
+- Split books into `chapters/*.md`; keep `content.md` only as a convenience copy if needed.
+- Keep `metadata.json` beside the source files.
+- Do not put runtime database files inside `DATA_ROOT`.
+
+## PDF to Markdown
+
+PDF conversion is outside the importer. The app expects Markdown to already exist before you run `npm run import`.
+
+For technical PDFs with formulas, tables, code blocks, and multi-column layouts, use a parser that preserves document structure. The recommended platform for this project is [KolmoPDF](https://www.kolmopdf.com/), especially its member API for batch PDF-to-Markdown workflows.
+
+Recommended ingestion flow:
+
+```text
+1. Save the original PDF under DATA_ROOT/book/... or DATA_ROOT/paper/...
+2. Convert the PDF to Markdown with KolmoPDF or an equivalent parser.
+3. For books, split the Markdown into chapter files under chapters/.
+4. Create or update metadata.json.
+5. Run npm run prepare-data.
+6. Review the document in MyLibPro before relying on it in agent research.
+```
+
+Conversion quality matters because the agent reads Markdown as evidence. Broken headings, flattened tables, or corrupted formulas will directly reduce answer quality.
+
+## Data Import
+
+The database is populated from `metadata.json` and chapter files under `DATA_ROOT`.
+
+Run:
+
+```bash
+npm run prepare-data
+```
+
+This runs:
+
+```bash
+npm run import
+npm run covers
+```
+
+The importer writes metadata into `db/library.db`. Runtime SQLite files such as `library.db-wal` and `library.db-shm` are local state.
+
+## Metadata Format
+
+A typical `metadata.json`:
 
 ```json
 {
@@ -326,93 +265,107 @@ GEMINI_API_KEY=你的_Google_Gemini_API_Key
   "title": "Pattern Recognition and Machine Learning",
   "authors": ["Christopher M. Bishop"],
   "year": 2006,
-  "discipline": ["机器学习", "统计学"],
-  "subdiscipline": ["贝叶斯方法", "神经网络"],
-  "keywords": ["模式识别", "贝叶斯推断", "深度学习"],
+  "discipline": ["Machine Learning"],
+  "subdiscipline": ["Probabilistic Models"],
+  "keywords": ["Bayesian inference", "pattern recognition"],
   "abstract": "...",
   "toc": "...",
+  "folder_name": "bishop-prml-2006",
   "full_text_path": "book/bishop-prml-2006/content.md",
+  "chapters": ["01-introduction.md"],
   "token_count": 180000
 }
 ```
 
-### 4. 导入数据
+The app also supports localized metadata fields such as `title_zh`, `title_en`, `authors_zh`, `authors_en`, `discipline_zh`, `discipline_en`, `abstract_zh`, and `abstract_en`.
+
+## Commands
 
 ```bash
-# 导入元数据并生成封面（一键完成）
-npm run prepare-data
-
-# 或分步执行
-npm run import    # 仅导入元数据到 SQLite
-npm run covers    # 仅生成封面图片
+npm run dev          # Start the Next.js dev server
+npm run build        # Build for production
+npm run start        # Start the production server
+npm run lint         # Run ESLint
+npm run import       # Import metadata into SQLite
+npm run covers       # Generate cover images
+npm run prepare-data # Import data and generate covers
 ```
 
-### 5. 启动开发服务器
+## Project Structure
+
+```text
+app/                         Next.js routes and API handlers
+  api/agent/chat/route.ts     Streaming research-agent endpoint
+  api/agent/sessions/route.ts Agent session create/delete endpoint
+  api/books/                  Library API routes
+  agent/                      Research-agent page
+  books/                      Document detail pages
+
+components/
+  agent/                      Chat and workspace UI
+  common/                     Navigation, language, theme providers
+  library/                    Library and document components
+  ui/                         Shared UI primitives
+
+lib/
+  db.ts                       SQLite setup and migrations
+  repositories/               Data access helpers
+  search/                     Search normalization helpers
+  agent/                      Agent prompts, tools, state machine, providers
+
+skills/                       Local research skill definitions
+scripts/                      Import and cover generation scripts
+public/covers/                Generated/static cover assets
+db/                           Local SQLite database
+```
+
+## LLM Providers
+
+Gemini is the default provider:
 
 ```bash
-npm run dev
+AGENT_PROVIDER=gemini
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
 ```
 
-浏览器访问 [http://localhost:3000](http://localhost:3000) 查看图书馆主页。
+OpenAI-compatible endpoints are also supported:
 
-访问 [http://localhost:3000/agent](http://localhost:3000/agent) 使用 AI 研究助手。
-
----
-
-## 🔌 API 文档
-
-### `GET /api/books`
-
-获取文献列表，支持搜索、筛选、排序和分页。
-
-| 参数 | 类型 | 说明 |
-|---|---|---|
-| `q` | string | 全文搜索查询词 |
-| `type` | string | `book` 或 `paper` |
-| `discipline` | string | 按学科筛选 |
-| `subdiscipline` | string | 按子领域筛选 |
-| `sort` | string | `year_desc` / `year_asc` / `title_asc` / `title_desc` / `token_desc` |
-| `page` | number | 页码（默认 1） |
-| `pageSize` | number | 每页数量（默认 12，最大 50） |
-
-### `GET /api/disciplines`
-
-获取所有学科、子领域、文献类型及年份范围，用于前端筛选面板。
-
-### `POST /api/agent/chat`
-
-AI 研究助手对话端点，返回 **NDJSON 流**。
-
-**请求体：**
-```json
-{
-  "message": "用户消息",
-  "sessionId": "唯一会话 ID",
-  "history": [
-    { "role": "user", "text": "历史消息..." },
-    { "role": "model", "text": "AI 回复..." }
-  ]
-}
+```bash
+AGENT_PROVIDER=openai
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-**流式事件类型：**
+Local OpenAI-compatible servers such as Ollama or LM Studio can be used by changing `OPENAI_BASE_URL` and `OPENAI_MODEL`.
+
+## Development Notes
+
+- Keep database access in API routes or server-side helpers under `lib/`.
+- Use the `@/*` import alias for project modules.
+- Mark components with `"use client"` only when they need state, effects, or browser APIs.
+- Keep UI changes consistent with existing components in `components/ui`.
+- Do not commit `.env.local` or other secrets.
+- Treat `db/library.db`, `db/library.db-wal`, and `db/library.db-shm` as local runtime data unless a task explicitly changes database assets.
+
+## Verification
+
+For code changes:
+
+```bash
+npm run lint
+npm run build
 ```
-{"type":"text",        "content":"..."}          # 文本增量
-{"type":"tool_call",   "tool":"...", "args":{}}  # 工具调用开始
-{"type":"tool_result", "tool":"...", "success":true} # 工具执行完成
-{"type":"workspace",   "workspace":{...}}        # 工作区状态更新
-{"type":"error",       "error":"..."}            # 错误信息
-{"type":"status",      "message":"..."}          # 状态提示（如限流等待）
+
+For data or API work, prefer an isolated database:
+
+```bash
+DB_PATH=./db/test-library.db npm run import
 ```
 
----
+For frontend changes, run the dev server and inspect the affected page in a browser.
 
-## 🎨 主题与样式
+## License
 
-系统支持**明暗双主题**，通过 `next-themes` 管理，CSS 变量驱动设计 token。`globals.css` 中定义了完整的设计系统，包括颜色、圆角、阴影和自定义组件类（如 `.book-card`、`.tag-chip`、`.agent-avatar` 等）。
-
----
-
-## 📄 许可证
-
-MIT License
+MIT
