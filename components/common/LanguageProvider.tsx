@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { Language } from "@/lib/i18n";
 
 const STORAGE_KEY = "mylibpro.language";
@@ -248,17 +248,30 @@ interface LanguageContextValue {
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
+function getStoredLanguage(): Language {
+  if (typeof window === "undefined") return "en";
+  const saved = window.localStorage.getItem(STORAGE_KEY);
+  return saved === "zh" ? "zh" : "en";
+}
+
+function subscribeToLanguageChange(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener("mylibpro-language-change", onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener("mylibpro-language-change", onStoreChange);
+  };
+}
+
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() => {
-    if (typeof window === "undefined") return "en";
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    return saved === "zh" ? "zh" : "en";
-  });
+  const language = useSyncExternalStore<Language>(subscribeToLanguageChange, getStoredLanguage, () => "en");
 
   const setLanguage = (next: Language) => {
-    setLanguageState(next);
-    window.localStorage.setItem(STORAGE_KEY, next);
-    document.documentElement.lang = next === "zh" ? "zh-CN" : "en";
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, next);
+      document.documentElement.lang = next === "zh" ? "zh-CN" : "en";
+      window.dispatchEvent(new Event("mylibpro-language-change"));
+    }
   };
 
   useEffect(() => {

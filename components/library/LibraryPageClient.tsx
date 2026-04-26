@@ -11,7 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { BookCard } from "@/components/library/BookCard";
-import { Heart, BookOpen, BookCheck, BookMarked, Library, Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Heart, BookOpen, BookCheck, BookMarked, Library, Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight, RefreshCw, FileText } from "lucide-react";
 import type { DocumentView, Bookshelf } from "@/lib/types/library";
 import { useLanguage } from "@/components/common/LanguageProvider";
 
@@ -31,6 +31,7 @@ interface FiltersData {
 }
 
 type ViewMode = "grid" | "list" | "cover";
+type DocumentTypeView = "book" | "paper";
 type QuickFilter = "" | "favorite" | "reading" | "read" | "unread";
 
 const LIBRARY_UI_STATE_KEY = "mylibpro.library.uiState";
@@ -39,15 +40,15 @@ interface LibraryUiState {
   searchQuery: string;
   selectedDiscipline: string;
   selectedSubdiscipline: string;
-  selectedType: string;
+  activeType: DocumentTypeView;
+  selectedType?: string;
   sortBy: string;
-  viewMode: ViewMode;
   quickFilter: QuickFilter;
   selectedShelf: string;
 }
 
-function isViewMode(value: unknown): value is ViewMode {
-  return value === "grid" || value === "list" || value === "cover";
+function isDocumentTypeView(value: unknown): value is DocumentTypeView {
+  return value === "book" || value === "paper";
 }
 
 function isQuickFilter(value: unknown): value is QuickFilter {
@@ -68,9 +69,8 @@ export default function LibraryPageClient() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedDiscipline, setSelectedDiscipline] = useState("");
   const [selectedSubdiscipline, setSelectedSubdiscipline] = useState("");
-  const [selectedType, setSelectedType] = useState("");
+  const [activeType, setActiveType] = useState<DocumentTypeView>("book");
   const [sortBy, setSortBy] = useState("year_desc");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("");
   const [selectedShelf, setSelectedShelf] = useState("");
 
@@ -85,7 +85,8 @@ export default function LibraryPageClient() {
   const [editingShelfDesc, setEditingShelfDesc] = useState("");
   const [syncing, setSyncing] = useState(false);
 
-  const pageSize = viewMode === "cover" ? 8 : viewMode === "list" ? 15 : 12;
+  const viewMode: ViewMode = activeType === "book" ? "cover" : "list";
+  const pageSize = activeType === "book" ? 12 : 15;
 
   // Restore list UI state when returning from a document page.
   useEffect(() => {
@@ -103,9 +104,10 @@ export default function LibraryPageClient() {
       }
       if (typeof state.selectedDiscipline === "string") setSelectedDiscipline(state.selectedDiscipline);
       if (typeof state.selectedSubdiscipline === "string") setSelectedSubdiscipline(state.selectedSubdiscipline);
-      if (typeof state.selectedType === "string") setSelectedType(state.selectedType);
+      if (isDocumentTypeView(state.activeType)) setActiveType(state.activeType);
+      else if (state.selectedType === "paper") setActiveType("paper");
+      else if (state.selectedType === "book") setActiveType("book");
       if (typeof state.sortBy === "string") setSortBy(state.sortBy);
-      if (isViewMode(state.viewMode)) setViewMode(state.viewMode);
       if (isQuickFilter(state.quickFilter)) setQuickFilter(state.quickFilter);
       if (typeof state.selectedShelf === "string") setSelectedShelf(state.selectedShelf);
     } catch (err) {
@@ -122,14 +124,13 @@ export default function LibraryPageClient() {
       searchQuery,
       selectedDiscipline,
       selectedSubdiscipline,
-      selectedType,
+      activeType,
       sortBy,
-      viewMode,
       quickFilter,
       selectedShelf,
     };
     window.localStorage.setItem(LIBRARY_UI_STATE_KEY, JSON.stringify(state));
-  }, [uiStateHydrated, searchQuery, selectedDiscipline, selectedSubdiscipline, selectedType, sortBy, viewMode, quickFilter, selectedShelf]);
+  }, [uiStateHydrated, searchQuery, selectedDiscipline, selectedSubdiscipline, activeType, sortBy, quickFilter, selectedShelf]);
 
   // Debounce
   useEffect(() => {
@@ -166,7 +167,7 @@ export default function LibraryPageClient() {
     if (debouncedQuery) params.set("q", debouncedQuery);
     if (selectedDiscipline) params.set("discipline", selectedDiscipline);
     if (selectedSubdiscipline) params.set("subdiscipline", selectedSubdiscipline);
-    if (selectedType) params.set("type", selectedType);
+    params.set("type", activeType);
     params.set("sort", sortBy);
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
@@ -189,7 +190,7 @@ export default function LibraryPageClient() {
     } finally {
       setLoading(false);
     }
-  }, [uiStateHydrated, debouncedQuery, selectedDiscipline, selectedSubdiscipline, selectedType, sortBy, page, pageSize, quickFilter, selectedShelf]);
+  }, [uiStateHydrated, debouncedQuery, selectedDiscipline, selectedSubdiscipline, activeType, sortBy, page, pageSize, quickFilter, selectedShelf]);
 
   useEffect(() => {
     fetchDocuments();
@@ -200,7 +201,6 @@ export default function LibraryPageClient() {
     setDebouncedQuery("");
     setSelectedDiscipline("");
     setSelectedSubdiscipline("");
-    setSelectedType("");
     setSortBy("year_desc");
     setQuickFilter("");
     setSelectedShelf("");
@@ -208,7 +208,7 @@ export default function LibraryPageClient() {
   };
 
   const hasFilters =
-    debouncedQuery || selectedDiscipline || selectedSubdiscipline || selectedType || quickFilter || selectedShelf;
+    debouncedQuery || selectedDiscipline || selectedSubdiscipline || quickFilter || selectedShelf;
 
   // Grid classes per view mode
   const gridClass =
@@ -475,26 +475,6 @@ export default function LibraryPageClient() {
               )}
             </div>
 
-            {/* Type */}
-            <div>
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
-                {t("library.type")}
-              </label>
-              <Select value={selectedType} onValueChange={(v) => { setSelectedType(v === "all" ? "" : v); setPage(1); }}>
-                <SelectTrigger className="h-9 text-sm bg-background/50">
-                  <SelectValue placeholder={t("library.allTypes")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("library.allTypes")}</SelectItem>
-                  {filtersData?.types.map((typeValue) => (
-                    <SelectItem key={typeValue} value={typeValue}>
-                      {typeValue === "book" ? `📚 ${t("library.book")}` : typeValue === "paper" ? `📄 ${t("library.paper")}` : typeValue}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Discipline */}
             <div>
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2 block">
@@ -590,8 +570,35 @@ export default function LibraryPageClient() {
 
         {/* ===== MAIN CONTENT ===== */}
         <div className="flex-1 min-w-0">
-          {/* Toolbar: mobile search + view toggle */}
-          <div className="flex items-center justify-between mb-5">
+          {/* Toolbar: document type views + mobile search */}
+          <div className="flex flex-col gap-4 mb-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center bg-muted/50 rounded-xl p-1 flex-shrink-0">
+                <button
+                  onClick={() => { setActiveType("book"); setPage(1); }}
+                  className={`view-btn ${activeType === "book" ? "active" : ""}`}
+                  title={t("library.book")}
+                >
+                  <BookOpen className="w-4 h-4" />
+                  <span className="text-xs">{t("library.book")}</span>
+                </button>
+                <button
+                  onClick={() => { setActiveType("paper"); setPage(1); }}
+                  className={`view-btn ${activeType === "paper" ? "active" : ""}`}
+                  title={t("library.paper")}
+                >
+                  <FileText className="w-4 h-4" />
+                  <span className="text-xs">{t("library.paper")}</span>
+                </button>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {activeType === "book" ? t("library.cover") : t("library.list")}
+                <span className="mx-1">/</span>
+                {t("library.results", { total })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
             {/* Mobile search (lg: hidden) */}
             <div className="lg:hidden flex-1 mr-3">
               <Input
@@ -623,12 +630,6 @@ export default function LibraryPageClient() {
                     <button onClick={() => setSelectedSubdiscipline("")} className="hover:text-destructive">✕</button>
                   </span>
                 )}
-                {selectedType && (
-                  <span className="tag-chip tag-chip-discipline flex items-center gap-1">
-                    {selectedType === "book" ? t("library.book") : t("library.paper")}
-                    <button onClick={() => setSelectedType("")} className="hover:text-destructive">✕</button>
-                  </span>
-                )}
                 {quickFilter && (
                   <span className="tag-chip tag-chip-subdiscipline flex items-center gap-1">
                     {quickFilterItems.find(q => q.key === quickFilter)?.label}
@@ -644,39 +645,6 @@ export default function LibraryPageClient() {
                 <span className="text-xs text-muted-foreground ml-1">{t("library.results", { total })}</span>
               </div>
             )}
-
-            {/* View toggle */}
-            <div className="flex items-center bg-muted/50 rounded-xl p-1 ml-auto flex-shrink-0">
-              <button
-                onClick={() => { setViewMode("grid"); setPage(1); }}
-                className={`view-btn ${viewMode === "grid" ? "active" : ""}`}
-                title={t("library.grid")}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
-                </svg>
-                <span className="text-xs hidden sm:inline">{t("library.grid")}</span>
-              </button>
-              <button
-                onClick={() => { setViewMode("list"); setPage(1); }}
-                className={`view-btn ${viewMode === "list" ? "active" : ""}`}
-                title={t("library.list")}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-                </svg>
-                <span className="text-xs hidden sm:inline">{t("library.list")}</span>
-              </button>
-              <button
-                onClick={() => { setViewMode("cover"); setPage(1); }}
-                className={`view-btn ${viewMode === "cover" ? "active" : ""}`}
-                title={t("library.cover")}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-                </svg>
-                <span className="text-xs hidden sm:inline">{t("library.cover")}</span>
-              </button>
             </div>
           </div>
 
