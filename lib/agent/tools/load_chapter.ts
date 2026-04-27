@@ -58,6 +58,25 @@ export function executeLoadChapter(
         };
     }
 
+    const ws = getOrCreateSession(sessionId);
+    const alreadyRead = ws.readingHistory.some(
+        (entry) =>
+            entry.documentId === documentId &&
+            entry.chapterFileName === chapterFileName &&
+            Boolean(entry.keyFindings)
+    );
+    if (alreadyRead) {
+        return {
+            error:
+                "This chapter has already been read and recorded in this research session. Choose a different unread chapter or answer from the existing evidence.",
+            document_id: documentId,
+            title: view.title,
+            reading_unit: "chapter",
+            chapter_file_name: chapterFileName,
+            already_read: true,
+        };
+    }
+
     const chapterPath = path.join(
         DATA_ROOT,
         view.type,
@@ -106,7 +125,7 @@ export function executeLoadChapter(
         chapter_file_name: chapterFileName,
         chapter_index: view.chapters.indexOf(chapterFileName),
         chapters_count: view.chapters.length,
-        context_budget: checkContextBudget(getOrCreateSession(sessionId)),
+        context_budget: checkContextBudget(ws),
         content,
     };
 }

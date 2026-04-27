@@ -2,7 +2,7 @@ import { getDb, recordToView, type DocumentRecord } from "../db";
 import { buildSearchQuery, buildSearchText } from "../search/cjk";
 import { disciplineSearchTerms, expandDisciplineForSearch } from "../search/disciplines";
 import type { DocumentView } from "../types/library";
-import { normalizeMetadataI18n } from "../i18n";
+import { normalizeMetadataI18n, parseStringArray } from "../i18n";
 
 export interface ListDocumentsInput {
     q: string;
@@ -137,14 +137,22 @@ export function listDocuments(input: ListDocumentsInput): ListDocumentsResult {
 
 export interface DocumentPatchInput {
     authors?: unknown;
+    authors_zh?: unknown;
+    authors_en?: unknown;
     abstract?: unknown;
     toc?: unknown;
     remark?: unknown;
     status?: unknown;
     is_favorite?: unknown;
     discipline?: unknown;
+    discipline_zh?: unknown;
+    discipline_en?: unknown;
     subdiscipline?: unknown;
+    subdiscipline_zh?: unknown;
+    subdiscipline_en?: unknown;
     keywords?: unknown;
+    keywords_zh?: unknown;
+    keywords_en?: unknown;
     shelves?: unknown;
 }
 
@@ -155,6 +163,28 @@ function normalizeStringArray(value: unknown): string[] {
         .filter((item): item is string => typeof item === "string")
         .map((item) => item.trim())
         .filter(Boolean);
+}
+
+// Re-align stored localized arrays after a base array edit. Items that survive in
+// the new base keep their previously stored translation (matched by value, not index,
+// so reordering is safe); newly added items default to the value itself for both locales.
+function realignI18nArrays(
+    newBase: string[],
+    oldBaseJson: string,
+    oldZhJson: string,
+    oldEnJson: string,
+): { zh: string[]; en: string[] } {
+    const oldBase = parseStringArray(oldBaseJson);
+    const oldZh = parseStringArray(oldZhJson);
+    const oldEn = parseStringArray(oldEnJson);
+    const zh: string[] = [];
+    const en: string[] = [];
+    for (const item of newBase) {
+        const idx = oldBase.indexOf(item);
+        zh.push(idx >= 0 && oldZh[idx] ? oldZh[idx] : item);
+        en.push(idx >= 0 && oldEn[idx] ? oldEn[idx] : item);
+    }
+    return { zh, en };
 }
 
 function queueI18nMetadataUpdates(
@@ -213,7 +243,20 @@ export function updateDocumentFields(id: string, input: DocumentPatchInput): voi
 
     if (input.authors !== undefined) {
         authors = normalizeStringArray(input.authors);
-        metadataI18n = normalizeMetadataI18n({ ...current, authors });
+        // Caller-supplied translations take precedence (e.g. LLM-synced); otherwise
+        // realign by value-matching against the previous arrays.
+        const sync = (input.authors_zh !== undefined || input.authors_en !== undefined)
+            ? {
+                zh: normalizeStringArray(input.authors_zh ?? []),
+                en: normalizeStringArray(input.authors_en ?? []),
+            }
+            : realignI18nArrays(authors, current.authors, current.authors_zh, current.authors_en);
+        metadataI18n = normalizeMetadataI18n({
+            ...current,
+            authors,
+            authors_zh: JSON.stringify(sync.zh),
+            authors_en: JSON.stringify(sync.en),
+        });
         updates.push("authors = ?");
         values.push(JSON.stringify(authors));
         shouldRebuildSearchText = true;
@@ -243,21 +286,54 @@ export function updateDocumentFields(id: string, input: DocumentPatchInput): voi
     }
     if (input.discipline !== undefined) {
         discipline = normalizeStringArray(input.discipline);
-        metadataI18n = normalizeMetadataI18n({ ...current, discipline });
+        const sync = (input.discipline_zh !== undefined || input.discipline_en !== undefined)
+            ? {
+                zh: normalizeStringArray(input.discipline_zh ?? []),
+                en: normalizeStringArray(input.discipline_en ?? []),
+            }
+            : realignI18nArrays(discipline, current.discipline, current.discipline_zh, current.discipline_en);
+        metadataI18n = normalizeMetadataI18n({
+            ...current,
+            discipline,
+            discipline_zh: JSON.stringify(sync.zh),
+            discipline_en: JSON.stringify(sync.en),
+        });
         updates.push("discipline = ?");
         values.push(JSON.stringify(discipline));
         shouldRebuildSearchText = true;
     }
     if (input.subdiscipline !== undefined) {
         subdiscipline = normalizeStringArray(input.subdiscipline);
-        metadataI18n = normalizeMetadataI18n({ ...current, subdiscipline });
+        const sync = (input.subdiscipline_zh !== undefined || input.subdiscipline_en !== undefined)
+            ? {
+                zh: normalizeStringArray(input.subdiscipline_zh ?? []),
+                en: normalizeStringArray(input.subdiscipline_en ?? []),
+            }
+            : realignI18nArrays(subdiscipline, current.subdiscipline, current.subdiscipline_zh, current.subdiscipline_en);
+        metadataI18n = normalizeMetadataI18n({
+            ...current,
+            subdiscipline,
+            subdiscipline_zh: JSON.stringify(sync.zh),
+            subdiscipline_en: JSON.stringify(sync.en),
+        });
         updates.push("subdiscipline = ?");
         values.push(JSON.stringify(subdiscipline));
         shouldRebuildSearchText = true;
     }
     if (input.keywords !== undefined) {
         keywords = normalizeStringArray(input.keywords);
-        metadataI18n = normalizeMetadataI18n({ ...current, keywords });
+        const sync = (input.keywords_zh !== undefined || input.keywords_en !== undefined)
+            ? {
+                zh: normalizeStringArray(input.keywords_zh ?? []),
+                en: normalizeStringArray(input.keywords_en ?? []),
+            }
+            : realignI18nArrays(keywords, current.keywords, current.keywords_zh, current.keywords_en);
+        metadataI18n = normalizeMetadataI18n({
+            ...current,
+            keywords,
+            keywords_zh: JSON.stringify(sync.zh),
+            keywords_en: JSON.stringify(sync.en),
+        });
         updates.push("keywords = ?");
         values.push(JSON.stringify(keywords));
         shouldRebuildSearchText = true;

@@ -64,7 +64,25 @@ export function executeLoadFullText(
             chapters: view.chapters,
             chapters_count: view.chapters.length,
             message:
-                "Books are loaded by chapter in MyLibPro. Choose a chapter_file_name and call load_chapter; do not load the whole book Markdown as one unit.",
+                "Books are loaded by chapter in MyLibPro. Choose an unread chapter_file_name and call load_chapter; do not load the whole book Markdown as one unit.",
+        };
+    }
+
+    const alreadyRead = ws.readingHistory.some(
+        (entry) =>
+            entry.documentId === documentId &&
+            entry.referenceKind === "document" &&
+            !entry.chapterFileName &&
+            Boolean(entry.keyFindings)
+    );
+    if (alreadyRead) {
+        return {
+            error:
+                "This document has already been read and recorded in this research session. Choose a different unread document or answer from the existing evidence.",
+            document_id: documentId,
+            title: view.title,
+            reading_unit: "document",
+            already_read: true,
         };
     }
 

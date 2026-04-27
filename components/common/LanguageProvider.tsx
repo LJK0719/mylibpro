@@ -71,6 +71,21 @@ type TranslationKey =
   | "detail.noRemark"
   | "detail.addRemark"
   | "detail.back"
+  | "detail.notFound"
+  | "detail.noShelvesYet"
+  | "detail.tocCollapse"
+  | "detail.tocExpand"
+  | "detail.tagAddHint"
+  | "detail.tagDoneEditing"
+  | "detail.placeholderAuthor"
+  | "detail.placeholderDiscipline"
+  | "detail.placeholderSubdiscipline"
+  | "detail.placeholderKeyword"
+  | "detail.placeholderRemark"
+  | "detail.regenerateAbstract"
+  | "detail.regenerateToc"
+  | "detail.generating"
+  | "detail.notAssignedShelf"
   | "agent.title"
   | "agent.subtitle"
   | "agent.workspace"
@@ -149,6 +164,21 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     "detail.noRemark": "No remark yet. Click to add one.",
     "detail.addRemark": "Add remark",
     "detail.back": "Back to library",
+    "detail.notFound": "Document not found",
+    "detail.noShelvesYet": "No shelves yet. Create one on the home page first.",
+    "detail.tocCollapse": "Collapse ↑",
+    "detail.tocExpand": "Show all ({total} lines) ↓",
+    "detail.tagAddHint": "Type and press Enter to add",
+    "detail.tagDoneEditing": "Done",
+    "detail.placeholderAuthor": "Add author and press Enter",
+    "detail.placeholderDiscipline": "Add discipline and press Enter",
+    "detail.placeholderSubdiscipline": "Add subdiscipline and press Enter",
+    "detail.placeholderKeyword": "Add keyword and press Enter",
+    "detail.placeholderRemark": "Write notes or remarks...",
+    "detail.regenerateAbstract": "Regenerate abstract",
+    "detail.regenerateToc": "Regenerate TOC",
+    "detail.generating": "Generating...",
+    "detail.notAssignedShelf": "Not assigned to any shelf. Click Manage.",
     "agent.title": "Academic Research Agent",
     "agent.subtitle": "Full-text-first analysis from your library",
     "agent.workspace": "Workspace",
@@ -226,6 +256,21 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     "detail.noRemark": "暂无备注，点击添加。",
     "detail.addRemark": "添加备注",
     "detail.back": "返回文献库",
+    "detail.notFound": "未找到文献",
+    "detail.noShelvesYet": "还没有书架，请先在主页创建书架。",
+    "detail.tocCollapse": "收起 ↑",
+    "detail.tocExpand": "展开全部（{total} 行）↓",
+    "detail.tagAddHint": "输入后按 Enter 添加",
+    "detail.tagDoneEditing": "完成",
+    "detail.placeholderAuthor": "输入作者后按 Enter 添加",
+    "detail.placeholderDiscipline": "输入学科后按 Enter 添加",
+    "detail.placeholderSubdiscipline": "输入子领域后按 Enter 添加",
+    "detail.placeholderKeyword": "输入关键词后按 Enter 添加",
+    "detail.placeholderRemark": "输入笔记或备注...",
+    "detail.regenerateAbstract": "重新生成摘要",
+    "detail.regenerateToc": "重新生成目录",
+    "detail.generating": "生成中...",
+    "detail.notAssignedShelf": "暂未加入任何书架，点击「管理」分配。",
     "agent.title": "学术研究助手",
     "agent.subtitle": "基于全文证据的深度分析",
     "agent.workspace": "工作区",

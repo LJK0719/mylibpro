@@ -260,23 +260,25 @@ export default function AgentPageClient() {
 
                                 case "tool_result":
                                     setMessages((prev) =>
-                                        prev.map((m) =>
-                                            m.id === agentMsgId
-                                                ? {
-                                                    ...m,
-                                                    toolCalls: (m.toolCalls || []).map((tc) =>
-                                                        tc.name === event.tool
-                                                            ? {
-                                                                ...tc,
-                                                                status: event.success
-                                                                    ? ("done" as const)
-                                                                    : ("error" as const),
-                                                            }
-                                                            : tc
-                                                    ),
-                                                }
-                                                : m
-                                        )
+                                        prev.map((m) => {
+                                            if (m.id !== agentMsgId) return m;
+                                            let updated = false;
+                                            return {
+                                                ...m,
+                                                toolCalls: (m.toolCalls || []).map((tc) => {
+                                                    if (!updated && tc.name === event.tool && tc.status === "running") {
+                                                        updated = true;
+                                                        return {
+                                                            ...tc,
+                                                            status: event.success
+                                                                ? ("done" as const)
+                                                                : ("error" as const),
+                                                        };
+                                                    }
+                                                    return tc;
+                                                }),
+                                            };
+                                        })
                                     );
                                     break;
 

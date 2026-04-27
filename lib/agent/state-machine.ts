@@ -40,6 +40,16 @@ export function getPhaseTools(phase: WorkflowPhase): FunctionDeclaration[] {
     }
 }
 
+export function isToolAllowedInPhase(
+    phase: WorkflowPhase,
+    toolName: string
+): boolean {
+    return getPhaseTools(phase).some((tool) => {
+        const declaration = tool as unknown as { name?: string };
+        return declaration.name === toolName;
+    });
+}
+
 export function phaseAfterTool(
     currentPhase: WorkflowPhase,
     toolName: string,
@@ -69,13 +79,13 @@ export function phaseAfterTool(
 export function getPhaseHint(phase: WorkflowPhase): string {
     switch (phase) {
         case "must_read":
-            return "\n\n[System note] Search returned results. If the user only needs a list or overview, call decide_continue_or_answer(decision=answer) and then answer. For deep research: for books/textbooks, call get_document_detail before load_chapter; for papers, call load_full_text.";
+            return "\n\n[System note] Search returned results. If the user only needs a list or overview, call decide_continue_or_answer(decision=answer) and then answer. For deep research: for books/textbooks, call get_document_detail before load_chapter; for papers, call load_full_text. Do not load an evidence unit already present in Reading History.";
         case "must_record":
             return "\n\n[System note] You have loaded a minimum full-text unit. Call record_reading to save key findings. If the unit is a book chapter, include chapter_file_name.";
         case "must_notes":
             return "\n\n[System note] The reading record is complete. Call update_research_notes to update the research notebook.";
         case "must_decide":
-            return "\n\n[System note] The research notebook has been updated. Call decide_continue_or_answer to explicitly decide whether to search more, read more, or answer from the evidence already read.";
+            return "\n\n[System note] The research notebook has been updated. Call decide_continue_or_answer to explicitly decide whether to search more, read more, or answer from the evidence already read. If choosing read_more, the next evidence unit must be unread.";
         default:
             return "";
     }

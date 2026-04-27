@@ -141,13 +141,34 @@ export default function LibraryPageClient() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Load filters
-  useEffect(() => {
-    fetch("/api/disciplines")
-      .then((r) => r.json())
-      .then(setFiltersData)
-      .catch(console.error);
+  // Load filters. Kept as a stable callback so we can re-run it after edits or
+  // when the tab regains focus — the discipline/subdiscipline lists are derived
+  // from live DB rows, so they must be refreshed whenever the dataset may have
+  // changed (e.g. user edited tags on a detail page and came back).
+  const fetchFilters = useCallback(async () => {
+    try {
+      const res = await fetch("/api/disciplines");
+      setFiltersData(await res.json());
+    } catch (err) {
+      console.error("Failed to fetch filters:", err);
+    }
   }, []);
+
+  useEffect(() => { fetchFilters(); }, [fetchFilters]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        fetchFilters();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", fetchFilters);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", fetchFilters);
+    };
+  }, [fetchFilters]);
 
   // Load shelves
   const fetchShelves = useCallback(async () => {
@@ -185,16 +206,33 @@ export default function LibraryPageClient() {
       setDocuments(data.documents);
       setTotal(data.total);
       setTotalPages(data.totalPages);
+      // Keep the discipline / subdiscipline sidebar in sync with the latest dataset
+      // so tags that no longer reference any document drop off immediately.
+      void fetchFilters();
     } catch (err) {
       console.error("Failed to fetch:", err);
     } finally {
       setLoading(false);
     }
-  }, [uiStateHydrated, debouncedQuery, selectedDiscipline, selectedSubdiscipline, activeType, sortBy, page, pageSize, quickFilter, selectedShelf]);
+  }, [uiStateHydrated, debouncedQuery, selectedDiscipline, selectedSubdiscipline, activeType, sortBy, page, pageSize, quickFilter, selectedShelf, fetchFilters]);
 
   useEffect(() => {
     fetchDocuments();
   }, [fetchDocuments]);
+
+  // If a previously-selected discipline / subdiscipline disappears from the live
+  // filter list (because the user removed the last reference to it on a detail
+  // page), drop the now-orphaned selection so the sidebar and active-filter chips
+  // stay consistent.
+  useEffect(() => {
+    if (!filtersData) return;
+    if (selectedDiscipline && !filtersData.disciplines.some(d => d.value === selectedDiscipline)) {
+      setSelectedDiscipline("");
+    }
+    if (selectedSubdiscipline && !filtersData.subdisciplines.some(s => s.value === selectedSubdiscipline)) {
+      setSelectedSubdiscipline("");
+    }
+  }, [filtersData, selectedDiscipline, selectedSubdiscipline]);
 
   const clearFilters = () => {
     setSearchQuery("");

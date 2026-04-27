@@ -30,6 +30,11 @@ export const decideContinueOrAnswerDeclaration = {
                 description:
                     "Evidence gaps that still need reading before answering.",
             },
+            next_evidence_unit: {
+                type: Type.STRING,
+                description:
+                    "Required when decision is read_more: the specific unread document_id or document_id/chapter_file_name planned next.",
+            },
         },
         required: ["decision", "reason"],
     },
@@ -45,6 +50,7 @@ export function executeDecideContinueOrAnswer(
         ? args.missing_evidence
         : [];
     const neededDocumentType = (args.needed_document_type as string) || "any";
+    const nextEvidenceUnit = (args.next_evidence_unit as string) || "";
     const ws = getOrCreateSession(sessionId);
 
     if (ws.readingHistory.length === 0 && decision !== "answer") {
@@ -65,6 +71,35 @@ export function executeDecideContinueOrAnswer(
         };
     }
 
+    if (decision === "read_more" && !nextEvidenceUnit.trim()) {
+        return {
+            error:
+                "When deciding to read_more, specify next_evidence_unit as an unread document_id or document_id/chapter_file_name.",
+            decision,
+            reason,
+        };
+    }
+
+    if (
+        decision === "read_more" &&
+        nextEvidenceUnit &&
+        ws.readingHistory.some((entry) => {
+            const unit = entry.chapterFileName
+                ? `${entry.documentId}/${entry.chapterFileName}`
+                : entry.documentId;
+            return unit === nextEvidenceUnit || entry.documentId === nextEvidenceUnit;
+        })
+    ) {
+        return {
+            error:
+                "next_evidence_unit has already been read in this session. Choose a different unread evidence unit or answer from the existing evidence.",
+            decision,
+            reason,
+            next_evidence_unit: nextEvidenceUnit,
+            already_read: true,
+        };
+    }
+
     addArtifact(sessionId, {
         type: "evidence_summary",
         title: `Decision: ${decision}`,
@@ -72,6 +107,9 @@ export function executeDecideContinueOrAnswer(
             `Decision: ${decision}`,
             `Reason: ${reason}`,
             `Needed document type: ${neededDocumentType}`,
+            nextEvidenceUnit
+                ? `Next evidence unit: ${nextEvidenceUnit}`
+                : "Next evidence unit: none",
             missingEvidence.length > 0
                 ? `Missing evidence:\n${missingEvidence.map((item) => `- ${item}`).join("\n")}`
                 : "Missing evidence: none",
@@ -86,6 +124,7 @@ export function executeDecideContinueOrAnswer(
         decision,
         reason,
         needed_document_type: neededDocumentType,
+        next_evidence_unit: nextEvidenceUnit || undefined,
         missing_evidence: missingEvidence,
         can_answer: decision === "answer",
         instruction:

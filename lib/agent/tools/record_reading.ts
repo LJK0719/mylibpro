@@ -66,6 +66,22 @@ export function executeRecordReading(
         "The document has findings relevant to the current research question.";
 
     const ws = getOrCreateSession(sessionId);
+    const alreadyRecorded = ws.readingHistory.some(
+        (entry) =>
+            entry.documentId === documentId &&
+            entry.chapterFileName === chapterFileName &&
+            Boolean(entry.keyFindings)
+    );
+    if (alreadyRecorded) {
+        return {
+            error:
+                "Reading findings for this evidence unit have already been recorded in this research session. Update the research notebook or decide whether to answer instead of recording a duplicate.",
+            document_id: documentId,
+            chapter_file_name: chapterFileName,
+            already_recorded: true,
+        };
+    }
+
     const matchingRefs = ws.activeReferences.filter(
         (r) =>
             r.documentId === documentId &&

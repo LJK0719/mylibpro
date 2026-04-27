@@ -46,6 +46,7 @@ import {
     getPhaseTools,
     phaseAfterTool,
     getPhaseHint,
+    isToolAllowedInPhase,
 } from "@/lib/agent/state-machine";
 import {
     executeTool,
@@ -93,6 +94,16 @@ function persistFinalAnswer(sessionId: string, answer: string) {
         },
     });
     updateSession(sessionId, { status: "completed" });
+}
+
+function blockedToolResult(reason: string): { name: string; result: Record<string, unknown> } {
+    return {
+        name: "blocked",
+        result: {
+            error: reason,
+            guardrail: "workflow_phase_boundary",
+        },
+    };
 }
 
 export async function POST(req: NextRequest) {
@@ -251,6 +262,7 @@ export async function POST(req: NextRequest) {
                         if (response.toolCalls.length > 0) {
                             openAIContents.push(response.assistantMessage);
 
+                            let deferRemainingToolCalls = false;
                             for (const toolCall of response.toolCalls) {
                                 send({
                                     type: "tool_call",
@@ -258,11 +270,31 @@ export async function POST(req: NextRequest) {
                                     args: toolCall.args,
                                 });
 
-                                const toolResult = executeTool(
-                                    toolCall.name,
-                                    toolCall.args,
-                                    sessionId
-                                );
+                                let toolResult;
+                                if (deferRemainingToolCalls) {
+                                    toolResult = blockedToolResult(
+                                        "A previous tool call advanced the workflow phase. This tool call was not executed; wait for the prior tool result, then choose the next valid action."
+                                    );
+                                } else if (!isToolAllowedInPhase(phase, toolCall.name)) {
+                                    toolResult = blockedToolResult(
+                                        `Tool "${toolCall.name}" is not allowed during workflow phase "${phase}". Use the tool required by the current phase.`
+                                    );
+                                } else {
+                                    const beforePhase = phase;
+                                    toolResult = executeTool(
+                                        toolCall.name,
+                                        toolCall.args,
+                                        sessionId
+                                    );
+                                    if (!("error" in (toolResult.result || {}))) {
+                                        phase = phaseAfterTool(
+                                            phase,
+                                            toolCall.name,
+                                            toolResult.result
+                                        );
+                                        deferRemainingToolCalls = phase !== beforePhase;
+                                    }
+                                }
 
                                 const hasError = "error" in (toolResult.result || {});
 
@@ -271,14 +303,6 @@ export async function POST(req: NextRequest) {
                                     tool: toolCall.name,
                                     success: !hasError,
                                 });
-
-                                if (!hasError) {
-                                    phase = phaseAfterTool(
-                                        phase,
-                                        toolCall.name,
-                                        toolResult.result
-                                    );
-                                }
 
                                 if (["record_reading", "update_research_notes", "remove_reference", "load_full_text", "load_chapter", "decide_continue_or_answer"].includes(toolCall.name)) {
                                     send({
@@ -387,6 +411,7 @@ export async function POST(req: NextRequest) {
                             functionResponse: { name: string; response: { result: Record<string, unknown> } };
                         }> = [];
 
+                        let deferRemainingFunctionCalls = false;
                         for (const fc of functionCalls) {
                             // Notify client about tool call
                             send({
@@ -395,12 +420,31 @@ export async function POST(req: NextRequest) {
                                 args: fc.args,
                             });
 
-                            // Execute the tool
-                            const toolResult = executeTool(
-                                fc.name!,
-                                fc.args as Record<string, unknown>,
-                                sessionId
-                            );
+                            let toolResult;
+                            if (deferRemainingFunctionCalls) {
+                                toolResult = blockedToolResult(
+                                    "A previous tool call advanced the workflow phase. This tool call was not executed; wait for the prior tool result, then choose the next valid action."
+                                );
+                            } else if (!isToolAllowedInPhase(phase, fc.name!)) {
+                                toolResult = blockedToolResult(
+                                    `Tool "${fc.name}" is not allowed during workflow phase "${phase}". Use the tool required by the current phase.`
+                                );
+                            } else {
+                                const beforePhase = phase;
+                                toolResult = executeTool(
+                                    fc.name!,
+                                    fc.args as Record<string, unknown>,
+                                    sessionId
+                                );
+                                if (!("error" in (toolResult.result || {}))) {
+                                    phase = phaseAfterTool(
+                                        phase,
+                                        fc.name!,
+                                        toolResult.result
+                                    );
+                                    deferRemainingFunctionCalls = phase !== beforePhase;
+                                }
+                            }
 
                             const hasError = "error" in (toolResult.result || {});
 
@@ -412,14 +456,6 @@ export async function POST(req: NextRequest) {
                             });
 
                             // ─── Workflow phase transitions ───────────
-                            if (!hasError) {
-                                phase = phaseAfterTool(
-                                    phase,
-                                    fc.name!,
-                                    toolResult.result
-                                );
-                            }
-
                             // Push workspace update after workspace-affecting tools
                             if (["record_reading", "update_research_notes", "remove_reference", "load_full_text", "load_chapter", "decide_continue_or_answer"].includes(fc.name!)) {
                                 send({

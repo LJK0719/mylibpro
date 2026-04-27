@@ -22,6 +22,7 @@ Use after at least one reading cycle has completed: load_full_text for a paper o
   "decision": "search_more | read_more | answer",
   "reason": "string",
   "needed_document_type": "book | paper | any | optional",
+  "next_evidence_unit": "string | required when decision is read_more",
   "missing_evidence": ["string"]
 }
 ```
@@ -35,6 +36,8 @@ Use after at least one reading cycle has completed: load_full_text for a paper o
 ## Must Not
 - Do not choose answer if no complete evidence unit has been read.
 - Do not answer if the notebook identifies unresolved essential evidence gaps.
+- Do not choose read_more without naming a specific unread next_evidence_unit.
+- Do not choose a next_evidence_unit that already appears in Reading History.
 - Do not cite unread documents.
 
 ## Failure Handling
@@ -43,4 +46,5 @@ If the library cannot support the question, answer with the evidence gap instead
 ## Quality Checklist
 - Decision is justified by reading history and notebook state.
 - Search-only paths are rejected.
+- read_more decisions name a concrete unread next evidence unit.
 - Active context is kept focused on useful papers and book chapters.

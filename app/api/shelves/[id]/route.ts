@@ -5,7 +5,7 @@ import {
   updateShelfDescription,
 } from "@/lib/repositories/shelves";
 
-// PATCH /api/shelves/[id] — 更新书架说明
+// PATCH /api/shelves/[id] — update a bookshelf's description.
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -21,7 +21,7 @@ export async function PATCH(
   const shelf = getShelfById(id);
 
   if (!shelf) {
-    return NextResponse.json({ error: "书架不存在" }, { status: 404 });
+    return NextResponse.json({ error: "Shelf not found" }, { status: 404 });
   }
 
   const updated = body.description !== undefined
@@ -30,7 +30,7 @@ export async function PATCH(
   return NextResponse.json(updated);
 }
 
-// DELETE /api/shelves/[id] — 删除书架（并从所有文献中移除该书架引用）
+// DELETE /api/shelves/[id] — delete a bookshelf and remove its reference from every document.
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -39,7 +39,7 @@ export async function DELETE(
   const shelf = getShelfById(id);
 
   if (!shelf) {
-    return NextResponse.json({ error: "书架不存在" }, { status: 404 });
+    return NextResponse.json({ error: "Shelf not found" }, { status: 404 });
   }
 
   deleteShelfAndDocumentReferences(id, shelf.name);

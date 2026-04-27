@@ -7,13 +7,17 @@ import { Separator } from "@/components/ui/separator";
 import { CoverImage } from "@/components/library/CoverImage";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Heart, Download, X, Plus, Check, Pencil, RefreshCw } from "lucide-react";
+import { Heart, Download, X, Check, Pencil, RefreshCw } from "lucide-react";
 import { loadSettings } from "@/lib/agent/storage";
 import type { DocumentView, Bookshelf } from "@/lib/types/library";
 import { useLanguage } from "@/components/common/LanguageProvider";
 import { pickArray, pickText } from "@/lib/i18n";
 
-// ---- Inline tag editor ----
+// Inline, auto-saving tag editor.
+// Click pencil to enter edit mode. Each tag operation (add via Enter, remove via X,
+// or trailing-text flush on exit) immediately persists through `onSave`. The component
+// has no draft state of its own — `tags` is the single source of truth — which means
+// removed tags cannot reappear after a server round-trip.
 function TagEditor({
     tags,
     onSave,
@@ -27,30 +31,37 @@ function TagEditor({
 }) {
     const { t } = useLanguage();
     const [editing, setEditing] = useState(false);
-    const [draft, setDraft] = useState<string[]>(tags);
     const [input, setInput] = useState("");
-    const [saving, setSaving] = useState(false);
+    const [pending, setPending] = useState(false);
 
-    useEffect(() => { setDraft(tags); }, [tags]);
-
-    const addTag = () => {
-        const val = input.trim();
-        if (val && !draft.includes(val)) setDraft(prev => [...prev, val]);
-        setInput("");
+    const commit = async (next: string[]) => {
+        setPending(true);
+        try { await onSave(next); } finally { setPending(false); }
     };
 
-    const removeTag = (t: string) => setDraft(prev => prev.filter(x => x !== t));
+    const addTag = async (raw: string) => {
+        const val = raw.trim();
+        setInput("");
+        if (!val || tags.includes(val)) return;
+        await commit([...tags, val]);
+    };
 
-    const save = async () => {
-        setSaving(true);
-        try { await onSave(draft); setEditing(false); } finally { setSaving(false); }
+    const removeTag = async (tag: string) => {
+        await commit(tags.filter(x => x !== tag));
+    };
+
+    const exitEdit = async () => {
+        const trailing = input.trim();
+        setInput("");
+        setEditing(false);
+        if (trailing && !tags.includes(trailing)) await commit([...tags, trailing]);
     };
 
     if (!editing) {
         return (
             <div className="flex flex-wrap gap-1.5 items-center group">
                 {tags.length > 0
-                    ? tags.map(t => <span key={t} className={`tag-chip ${colorClass}`}>{t}</span>)
+                    ? tags.map(tag => <span key={tag} className={`tag-chip ${colorClass}`}>{tag}</span>)
                     : <span className="text-xs text-muted-foreground/50 italic">{t("detail.notSet")}</span>}
                 <button
                     onClick={() => setEditing(true)}
@@ -64,31 +75,51 @@ function TagEditor({
     }
 
     return (
-        <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex flex-wrap gap-1.5">
-                {draft.map(t => (
-                    <span key={t} className={`tag-chip ${colorClass} flex items-center gap-1`}>
-                        {t}
-                        <button onClick={() => removeTag(t)} className="hover:text-destructive"><X className="w-2.5 h-2.5" /></button>
-                    </span>
-                ))}
-            </div>
-            <div className="flex gap-1.5">
-                <Input
-                    value={input}
-                    onChange={e => setInput(e.target.value)}
-                    placeholder={placeholder}
-                    className="h-7 text-xs flex-1"
-                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }}
-                />
-                <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={addTag} disabled={!input.trim()}>
-                    <Plus className="w-3 h-3" />
-                </Button>
-            </div>
-            <div className="flex gap-1.5">
-                <Button size="sm" className="h-7 text-xs" onClick={save} disabled={saving}>{saving ? t("detail.saving") : <><Check className="w-3 h-3 mr-1" />{t("detail.save")}</>}</Button>
-                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setDraft(tags); setEditing(false); }}>{t("library.cancel")}</Button>
-            </div>
+        <div className="flex flex-wrap items-center gap-1.5 animate-in fade-in zoom-in-95 duration-200">
+            {tags.map(tag => (
+                <span key={tag} className={`tag-chip ${colorClass} flex items-center gap-1`}>
+                    {tag}
+                    <button
+                        onClick={() => removeTag(tag)}
+                        disabled={pending}
+                        className="hover:text-destructive disabled:opacity-50"
+                        title={t("detail.edit")}
+                    >
+                        <X className="w-2.5 h-2.5" />
+                    </button>
+                </span>
+            ))}
+            <Input
+                autoFocus
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                placeholder={placeholder}
+                className="h-7 text-xs w-44 inline-flex"
+                disabled={pending}
+                onKeyDown={e => {
+                    if (e.key === "Enter" || e.key === ",") {
+                        e.preventDefault();
+                        void addTag(input);
+                    } else if (e.key === "Backspace" && !input && tags.length > 0) {
+                        e.preventDefault();
+                        void removeTag(tags[tags.length - 1]);
+                    } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        void exitEdit();
+                    }
+                }}
+            />
+            <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs px-2"
+                onClick={exitEdit}
+                disabled={pending}
+                title={t("detail.tagAddHint")}
+            >
+                <Check className="w-3 h-3 mr-1" />
+                {t("detail.tagDoneEditing")}
+            </Button>
         </div>
     );
 }
@@ -139,13 +170,26 @@ export default function BookDetailPageClient({
     const updateDoc = async (updates: Partial<DocumentView>) => {
         try {
             setIsSaving(true);
+            // For tag-array edits, forward the configured LLM settings so the server
+            // can ask the model to fill the missing locale (zh ↔ en) for newly-added
+            // items. Non-tag edits ignore these fields.
+            const settings = loadSettings();
+            const payload: Record<string, unknown> = {
+                ...updates,
+                provider: settings.provider,
+                model: settings.model,
+                baseUrl: settings.provider === "openai" ? settings.baseUrl : undefined,
+            };
             const r = await fetch(`/api/books/${encodeURIComponent(id)}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(updates),
+                body: JSON.stringify(payload),
             });
             if (!r.ok) throw new Error("Failed to update");
             const updated = await r.json();
+            if (updated.translationWarning) {
+                console.warn("Tag translation skipped:", updated.translationWarning);
+            }
             setDoc(updated);
             if ('remark' in updates) {
                 setEditRemark(updated.remark);
@@ -207,7 +251,7 @@ export default function BookDetailPageClient({
         return (
             <div className="max-w-4xl mx-auto px-6 py-20 text-center">
                 <div className="text-5xl mb-3">📭</div>
-                <h2 className="text-xl font-semibold mb-2">未找到文献</h2>
+                <h2 className="text-xl font-semibold mb-2">{t("detail.notFound")}</h2>
                 <p className="text-sm text-muted-foreground mb-4">{error}</p>
                 <Link href="/">
                     <Button variant="outline" size="sm">← {t("detail.back")}</Button>
@@ -317,7 +361,7 @@ export default function BookDetailPageClient({
                                 <div className="mt-1">
                                     <TagEditor
                                         tags={authors}
-                                        placeholder="Add author and press Enter"
+                                        placeholder={t("detail.placeholderAuthor")}
                                         colorClass="tag-chip-neutral"
                                         onSave={async (tags) => { await updateDoc({ authors: tags }); }}
                                     />
@@ -347,7 +391,7 @@ export default function BookDetailPageClient({
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wider mr-1 mt-1.5 flex-shrink-0">{t("library.discipline")}</span>
                             <TagEditor
                                 tags={discipline}
-                                placeholder="Add discipline and press Enter"
+                                placeholder={t("detail.placeholderDiscipline")}
                                 colorClass="tag-chip-discipline"
                                 onSave={async (tags) => { await updateDoc({ discipline: tags }); }}
                             />
@@ -356,7 +400,7 @@ export default function BookDetailPageClient({
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wider mr-1 mt-1.5 flex-shrink-0">{t("library.subdiscipline")}</span>
                             <TagEditor
                                 tags={subdiscipline}
-                                placeholder="Add subdiscipline and press Enter"
+                                placeholder={t("detail.placeholderSubdiscipline")}
                                 colorClass="tag-chip-subdiscipline"
                                 onSave={async (tags) => { await updateDoc({ subdiscipline: tags }); }}
                             />
@@ -365,7 +409,7 @@ export default function BookDetailPageClient({
                             <span className="text-[10px] text-muted-foreground uppercase tracking-wider mr-1 mt-1.5 flex-shrink-0">{t("detail.keywords")}</span>
                             <TagEditor
                                 tags={keywords}
-                                placeholder="Add keyword and press Enter"
+                                placeholder={t("detail.placeholderKeyword")}
                                 colorClass="tag-chip-neutral"
                                 onSave={async (tags) => { await updateDoc({ keywords: tags }); }}
                             />
@@ -399,7 +443,7 @@ export default function BookDetailPageClient({
                             <div className="p-3 rounded-xl bg-muted/30 border border-border/50 space-y-2 animate-in fade-in zoom-in-95 duration-200">
                                 {allShelves.length === 0 ? (
                                     <p className="text-xs text-muted-foreground text-center py-2">
-                                        还没有书架，请先在主页创建书架
+                                        {t("detail.noShelvesYet")}
                                     </p>
                                 ) : (
                                     <div className="space-y-1">
@@ -436,7 +480,7 @@ export default function BookDetailPageClient({
                                 className="text-xs text-muted-foreground/50 italic border border-dashed border-border rounded-xl p-3 text-center cursor-pointer hover:bg-muted/30 transition-colors"
                                 onClick={() => setEditingShelves(true)}
                             >
-                                Not assigned to any shelf. Click Manage.
+                                {t("detail.notAssignedShelf")}
                             </div>
                         )}
                     </div>
@@ -459,7 +503,7 @@ export default function BookDetailPageClient({
                         disabled={regeneratingField !== null}
                     >
                         <RefreshCw className={`w-3 h-3 ${regeneratingField === "abstract" ? "animate-spin" : ""}`} />
-                        {regeneratingField === "abstract" ? "Generating..." : "Regenerate abstract"}
+                        {regeneratingField === "abstract" ? t("detail.generating") : t("detail.regenerateAbstract")}
                     </Button>
                 </div>
                 {abstract ? (
@@ -487,7 +531,7 @@ export default function BookDetailPageClient({
                         disabled={regeneratingField !== null}
                     >
                         <RefreshCw className={`w-3 h-3 ${regeneratingField === "toc" ? "animate-spin" : ""}`} />
-                        {regeneratingField === "toc" ? "Generating..." : "Regenerate TOC"}
+                        {regeneratingField === "toc" ? t("detail.generating") : t("detail.regenerateToc")}
                     </Button>
                 </div>
                 {tocLines.length > 0 ? (
@@ -512,7 +556,7 @@ export default function BookDetailPageClient({
                                 onClick={() => setTocExpanded(!tocExpanded)}
                                 className="mt-3 text-primary text-xs"
                             >
-                                {tocExpanded ? "收起 ↑" : `展开全部 (${tocLines.length} 行) ↓`}
+                                {tocExpanded ? t("detail.tocCollapse") : t("detail.tocExpand", { total: tocLines.length })}
                             </Button>
                         )}
                     </div>
@@ -538,7 +582,7 @@ export default function BookDetailPageClient({
                     <div className="space-y-3 animate-in fade-in zoom-in-95 duration-200">
                         <textarea
                             className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                            placeholder="Write notes or remarks..."
+                            placeholder={t("detail.placeholderRemark")}
                             value={editRemark}
                             onChange={e => setEditRemark(e.target.value)}
                             disabled={isSaving}
