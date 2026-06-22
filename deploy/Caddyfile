@@ -1,0 +1,6 @@
+# Host Caddy reverse proxy (automatic HTTPS via Let's Encrypt).
+# Install: apt install caddy → put this at /etc/caddy/Caddyfile → systemctl reload caddy
+lib.jk0719.online {
+	reverse_proxy 127.0.0.1:3000
+	encode gzip
+}

@@ -49,3 +49,6 @@ libdata/
 db/*.db
 db/*.db-shm
 db/*.db-wal
+
+# scratch
+tmp/

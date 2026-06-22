@@ -1,0 +1,23 @@
+[Unit]
+Description=MyLibPro (Next.js academic library)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Source checkout on the server (see deploy/README.md).
+WorkingDirectory=/opt/mylibpro/app
+# Runtime config: API keys + DATA_ROOT/DB_PATH (host paths, not container paths).
+EnvironmentFile=/opt/mylibpro/.env
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOSTNAME=127.0.0.1
+# `next start` serves the prebuilt .next output. npm resolves to the local CLI.
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+# Light hardening for a single-app box.
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
