@@ -10,10 +10,9 @@ WorkingDirectory=/opt/mylibpro/app
 # Runtime config: API keys + DATA_ROOT/DB_PATH (host paths, not container paths).
 EnvironmentFile=/opt/mylibpro/.env
 Environment=NODE_ENV=production
-Environment=PORT=3000
-Environment=HOSTNAME=127.0.0.1
-# `next start` serves the prebuilt .next output. npm resolves to the local CLI.
-ExecStart=/usr/bin/npm run start
+# Bind to loopback only — host Caddy terminates TLS and proxies to it.
+# (`next start` reads -H/-p flags, not the HOSTNAME/PORT env vars.)
+ExecStart=/opt/mylibpro/app/node_modules/.bin/next start -H 127.0.0.1 -p 3000
 Restart=always
 RestartSec=5
 # Light hardening for a single-app box.
