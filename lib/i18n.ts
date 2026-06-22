@@ -36,7 +36,7 @@ const DISCIPLINE_TRANSLATIONS: Record<string, LocalizedText> = {
   "金融学": { en: "Finance", zh: "金融学" },
   "资产定价理论": { en: "Asset Pricing Theory", zh: "资产定价理论" },
   "衍生品与波动率建模": { en: "Derivatives and Volatility Modeling", zh: "衍生品与波动率建模" },
-  "金融随机分析": { en: "Stochastic Analysis in Finance", zh: "金融随机分析" },
+  "金融随机分析": { en: "Financial Stochastic Analysis", zh: "金融随机分析" },
   mathematics: { en: "Mathematics", zh: "数学" },
   statistics: { en: "Statistics", zh: "统计学" },
   "machine learning": { en: "Machine Learning", zh: "机器学习" },
