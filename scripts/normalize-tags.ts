@@ -54,6 +54,17 @@ const SUBDISCIPLINE_RULES: Rule[] = [
     // Pure capitalization fixes (Title Case).
     { canon: { en: "Statistical Inference", zh: "统计推断" }, en: ["Statistical Inference", "Statistical inference"], zh: ["统计推断"] },
     { canon: { en: "High-Dimensional Statistics", zh: "高维统计" }, en: ["High-Dimensional Statistics", "High-dimensional statistics"], zh: ["高维统计"] },
+    // Singleton tidy-up (per review).
+    { canon: { en: "Money and Banking", zh: "货币银行学" }, en: ["Monetary Finance", "Money and Banking"], zh: ["货币金融学", "货币银行学"] },
+    { canon: { en: "Markov Chain Monte Carlo", zh: "马尔可夫链蒙特卡洛" }, en: ["Markov Chain Monte Carlo (MCMC)", "Markov Chain Monte Carlo"], zh: ["马尔可夫链蒙特卡罗", "马尔可夫链蒙特卡洛"] },
+    { canon: { en: "Stochastic Control", zh: "随机控制" }, en: ["Stochastic Process Control", "Stochastic Control"], zh: ["随机过程控制", "随机控制"] },
+    { canon: { en: "Missing Data Methods", zh: "缺失数据方法" }, en: ["Missing Data Methods"], zh: ["缺失数据统计", "缺失数据方法"] },
+];
+
+// Subdiscipline labels to drop entirely (too generic / redundant). Matched on
+// the full (en, zh) pair to avoid accidental removals.
+const DROP_SUBDISCIPLINE: { en: string; zh: string }[] = [
+    { en: "Calculus", zh: "微积分" }, // the only doc using it already has "Vector Calculus"
 ];
 
 function J(s: string): string[] { try { const v = JSON.parse(s || "[]"); return Array.isArray(v) ? v : []; } catch { return []; } }
@@ -66,7 +77,7 @@ function canonFor(rules: Rule[], en: string, zh: string): { en: string; zh: stri
 }
 
 /** Normalize one aligned (base, zh, en) triple-array. Dedupes within the array. */
-function normalize(rules: Rule[], base: string[], zh: string[], en: string[]) {
+function normalize(rules: Rule[], base: string[], zh: string[], en: string[], drops: { en: string; zh: string }[] = []) {
     const outBase: string[] = [], outZh: string[] = [], outEn: string[] = [];
     const seen = new Set<string>();
     let changed = false;
@@ -74,6 +85,11 @@ function normalize(rules: Rule[], base: string[], zh: string[], en: string[]) {
     for (let i = 0; i < base.length; i++) {
         const e = (en[i] || base[i] || "").trim();
         const z = (zh[i] || base[i] || "").trim();
+        if (drops.some((d) => d.en === e && d.zh === z)) {
+            changed = true;
+            replacements.push(`(dropped "${e} / ${z}")`);
+            continue;
+        }
         const canon = canonFor(rules, e, z);
         let nb: string, nz: string, ne: string;
         if (canon) {
@@ -130,7 +146,7 @@ function main() {
 
     for (const r of rows) {
         const d = normalize(DISCIPLINE_RULES, J(r.discipline), J(r.discipline_zh), J(r.discipline_en));
-        const s = normalize(SUBDISCIPLINE_RULES, J(r.subdiscipline), J(r.subdiscipline_zh), J(r.subdiscipline_en));
+        const s = normalize(SUBDISCIPLINE_RULES, J(r.subdiscipline), J(r.subdiscipline_zh), J(r.subdiscipline_en), DROP_SUBDISCIPLINE);
         if (!d.changed && !s.changed) continue;
         docChanges++;
         for (const rep of [...d.replacements, ...s.replacements]) replacementTally.set(rep, (replacementTally.get(rep) || 0) + 1);
