@@ -194,11 +194,19 @@ export function buildDocumentTree(rec: DocumentRecord): DocNodeRow[] {
             });
         });
     } else {
-        // Paper / single-file document: headings of the full text become nodes.
-        const relPath = resolveFullTextPath(view);
-        const absPath = joinDataPath(relPath);
-        if (fs.existsSync(absPath)) {
-            const text = fs.readFileSync(absPath, "utf-8");
+        // Paper / single-file document (or a book whose chapters were never
+        // split). The recorded full_text_path can be stale (e.g. left pointing
+        // at a "待解析" staging dir), so fall back to the standard locations —
+        // same resilience as the regenerate route's resolveMarkdownPath.
+        const relCandidates = [
+            resolveFullTextPath(view),
+            `${view.type}/${view.folder_name}/parsed/full_text.md`,
+            `${view.type}/${view.folder_name}/full_text.md`,
+            `${view.type}/${view.folder_name}/content.md`,
+        ].filter(Boolean);
+        const relPath = relCandidates.find((rel) => fs.existsSync(joinDataPath(rel))) || "";
+        if (relPath) {
+            const text = fs.readFileSync(joinDataPath(relPath), "utf-8");
             // Make the root openable: point it at the full text.
             out[0].chapter_file = relPath;
             out[0].char_end = text.length;

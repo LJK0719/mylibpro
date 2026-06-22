@@ -9,6 +9,7 @@ export async function GET() {
         auth: "Send your key via 'X-API-Key', 'Authorization: Bearer', or '?key='.",
         mcp_endpoint: "/api/mcp",
         skill_install: "curl -fsSL <origin>/install.sh | bash -s -- <API_KEY>",
+        docs: "https://raw.githubusercontent.com/LJK0719/mylibpro/master/docs/EXTERNAL-BRAIN.md",
         endpoints: {
             "GET /api/v1/search": "q, type?, shelf?, discipline?, document_ids?, limit? → document cards",
             "GET /api/v1/outline": "document_id, node_id?, depth? → hierarchical outline (no body text)",
