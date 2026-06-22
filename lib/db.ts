@@ -133,6 +133,30 @@ export function getDb(): Database.Database {
     );
   `);
 
+  // Hierarchical document tree (vectorless / PageIndex-style navigation index)
+  // used by the external library-api layer. Each row is a node in a document's
+  // chapter→section→subsection tree; char offsets locate the node's text inside
+  // `chapter_file` so the full text can be sliced on demand. `summary` is an
+  // optional, lazily-filled node summary. Rebuilt per document by
+  // scripts/build-index.ts; safe to drop and regenerate.
+  _db.exec(`
+    CREATE TABLE IF NOT EXISTS doc_nodes (
+      node_id      TEXT PRIMARY KEY,
+      document_id  TEXT NOT NULL,
+      parent_id    TEXT,
+      level        INTEGER NOT NULL DEFAULT 0,
+      ordinal      INTEGER NOT NULL DEFAULT 0,
+      title        TEXT NOT NULL DEFAULT '',
+      chapter_file TEXT NOT NULL DEFAULT '',
+      char_start   INTEGER NOT NULL DEFAULT 0,
+      char_end     INTEGER NOT NULL DEFAULT 0,
+      token_count  INTEGER NOT NULL DEFAULT 0,
+      summary      TEXT NOT NULL DEFAULT '',
+      heading_path TEXT NOT NULL DEFAULT ''
+    );
+  `);
+  _db.exec(`CREATE INDEX IF NOT EXISTS idx_doc_nodes_doc ON doc_nodes(document_id, parent_id, ordinal);`);
+
 
   // Create FTS5 virtual table for full-text search
   _db.exec(`

@@ -134,6 +134,7 @@ export const agentEnv = {
     get contextCacheEnabled(): boolean {
         return process.env.AGENT_CONTEXT_CACHE_ENABLED === "true";
     },
+    // (library API keys live in `libraryEnv` below)
     get contextCacheRetention(): "in_memory" | "24h" {
         return process.env.AGENT_CONTEXT_CACHE_RETENTION === "24h"
             ? "24h"
@@ -141,5 +142,17 @@ export const agentEnv = {
     },
     get contextCacheKeyPrefix(): string | undefined {
         return process.env.AGENT_CONTEXT_CACHE_KEY_PREFIX || undefined;
+    },
+};
+
+// ─── External library API (REST /api/v1 + MCP /api/mcp) ─────────────
+
+export const libraryEnv = {
+    /** Comma-separated consumer API keys that may read the library externally. */
+    get apiKeys(): string[] {
+        return (process.env.LIBRARY_API_KEYS || "")
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean);
     },
 };

@@ -31,6 +31,9 @@ DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DATA_ROOT=/opt/mylibpro/libdata
 DB_PATH=/opt/mylibpro/db/library.db
+# External library API / MCP consumer keys (comma-separated). Required to
+# enable /api/v1/* and /api/mcp; leave unset to keep the external API off.
+LIBRARY_API_KEYS=change-me-to-a-long-random-secret
 EOF
 
 # 4. Build
