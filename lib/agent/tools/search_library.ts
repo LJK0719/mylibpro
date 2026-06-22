@@ -54,7 +54,7 @@ export function executeSearchLibrary(
         if (discipline) {
             const disciplineClauses = disciplineSearchTerms(discipline).map((term, index) => {
                 const key = `discipline${index}`;
-                params[key] = `%${term}%`;
+                params[key] = `%"${String(term).replace(/"/g, "")}"%`;
                 return `(d.discipline LIKE @${key} OR d.discipline_en LIKE @${key})`;
             });
             filters.push(`(${disciplineClauses.join(" OR ")})`);
@@ -69,7 +69,7 @@ export function executeSearchLibrary(
         if (discipline) {
             const disciplineClauses = disciplineSearchTerms(discipline).map((term, index) => {
                 const key = `discipline${index}`;
-                params[key] = `%${term}%`;
+                params[key] = `%"${String(term).replace(/"/g, "")}"%`;
                 return `(discipline LIKE @${key} OR discipline_en LIKE @${key})`;
             });
             filters.push(`(${disciplineClauses.join(" OR ")})`);

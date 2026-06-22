@@ -38,7 +38,7 @@ function scopeClauses(scope: LibraryScope | undefined, params: Record<string, un
     if (scope.discipline) {
         const terms = disciplineSearchTerms(scope.discipline).map((term, i) => {
             const key = `scopeDisc${i}`;
-            params[key] = `%${term}%`;
+            params[key] = `%"${String(term).replace(/"/g, "")}"%`;
             return `(d.discipline LIKE @${key} OR d.discipline_en LIKE @${key} OR d.discipline_zh LIKE @${key})`;
         });
         if (terms.length) clauses.push(`(${terms.join(" OR ")})`);

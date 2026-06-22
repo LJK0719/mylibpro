@@ -59,9 +59,13 @@ export function listDocuments(input: ListDocumentsInput): ListDocumentsResult {
     }
 
     if (input.discipline) {
+        // Match the discipline as a whole JSON-array element (`%"Term"%`), NOT a
+        // bare substring. A bare `%cs%` (the "Computer Science" alias) otherwise
+        // matches Mathemati·cs / Statisti·cs / Econometri·cs, etc. Aliases still
+        // help by also matching the zh form exactly.
         const disciplineClauses = disciplineSearchTerms(input.discipline).map((term, index) => {
             const key = `discipline${index}`;
-            params[key] = `%${term}%`;
+            params[key] = `%"${String(term).replace(/"/g, "")}"%`;
             return `(d.discipline LIKE @${key} OR d.discipline_zh LIKE @${key} OR d.discipline_en LIKE @${key})`;
         });
         conditions.push(`(${disciplineClauses.join(" OR ")})`);
@@ -69,7 +73,7 @@ export function listDocuments(input: ListDocumentsInput): ListDocumentsResult {
 
     if (input.subdiscipline) {
         conditions.push(`(d.subdiscipline LIKE @subdiscipline OR d.subdiscipline_zh LIKE @subdiscipline OR d.subdiscipline_en LIKE @subdiscipline)`);
-        params.subdiscipline = `%${input.subdiscipline}%`;
+        params.subdiscipline = `%"${input.subdiscipline.replace(/"/g, "")}"%`;
     }
 
     if (input.yearFrom !== null) {
