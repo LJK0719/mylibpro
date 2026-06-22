@@ -95,7 +95,26 @@ type TranslationKey =
   | "agent.inputPlaceholder"
   | "agent.inputHelp"
   | "agent.copy"
-  | "agent.regenerate";
+  | "agent.regenerate"
+  | "agent.needKeyToast"
+  | "model.title"
+  | "model.provider"
+  | "model.model"
+  | "model.customModel"
+  | "model.customModelPlaceholder"
+  | "model.baseUrl"
+  | "model.apiKey"
+  | "model.apiKeyPlaceholder"
+  | "model.serverKeyReady"
+  | "model.needsKey"
+  | "model.keyHint"
+  | "model.save"
+  | "model.saved"
+  | "model.getKey"
+  | "model.changeKey"
+  | "model.clearKey"
+  | "model.openSettings"
+  | "model.close";
 
 const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
   en: {
@@ -142,12 +161,12 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     "library.noDocuments": "No documents found",
     "library.noDocumentsHint": "Try changing the search terms or clearing filters.",
     "library.sync": "Sync library",
-    "library.syncing": "Syncing...",
+    "library.syncing": "Syncing…",
     "detail.library": "Library",
     "detail.notSet": "Not set",
     "detail.edit": "Edit",
     "detail.save": "Save",
-    "detail.saving": "Saving...",
+    "detail.saving": "Saving…",
     "detail.done": "Done",
     "detail.manage": "Manage",
     "detail.favorite": "Favorite",
@@ -177,18 +196,37 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     "detail.placeholderRemark": "Write notes or remarks...",
     "detail.regenerateAbstract": "Regenerate abstract",
     "detail.regenerateToc": "Regenerate TOC",
-    "detail.generating": "Generating...",
+    "detail.generating": "Generating…",
     "detail.notAssignedShelf": "Not assigned to any shelf. Click Manage.",
     "agent.title": "Academic Research Agent",
     "agent.subtitle": "Full-text-first analysis from your library",
     "agent.workspace": "Workspace",
     "agent.newChat": "New chat",
-    "agent.thinking": "Thinking...",
+    "agent.thinking": "Thinking…",
     "agent.emptyHint": "I can search your library, read full evidence units, and answer with citations.",
     "agent.inputPlaceholder": "Ask an academic question...",
     "agent.inputHelp": "Enter to send · Shift + Enter for a new line · Answers are grounded in library evidence",
     "agent.copy": "Copy",
     "agent.regenerate": "Regenerate",
+    "agent.needKeyToast": "Add an API key for this provider to continue.",
+    "model.title": "Model & API",
+    "model.provider": "Provider",
+    "model.model": "Model",
+    "model.customModel": "Custom model id…",
+    "model.customModelPlaceholder": "Enter a model id…",
+    "model.baseUrl": "Base URL",
+    "model.apiKey": "API Key",
+    "model.apiKeyPlaceholder": "Paste API key…",
+    "model.serverKeyReady": "Using built-in server key",
+    "model.needsKey": "This provider needs your API key",
+    "model.keyHint": "Saved for this browser session only — never written to disk.",
+    "model.save": "Save",
+    "model.saved": "Saved",
+    "model.getKey": "Get an API key",
+    "model.changeKey": "Change key",
+    "model.clearKey": "Clear",
+    "model.openSettings": "Open model settings",
+    "model.close": "Close",
   },
   zh: {
     "nav.agent": "研究助手",
@@ -234,12 +272,12 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     "library.noDocuments": "未找到文献",
     "library.noDocumentsHint": "尝试调整搜索条件或清除筛选。",
     "library.sync": "同步文献库",
-    "library.syncing": "同步中...",
+    "library.syncing": "同步中…",
     "detail.library": "文献库",
     "detail.notSet": "未设置",
     "detail.edit": "编辑",
     "detail.save": "保存",
-    "detail.saving": "保存中...",
+    "detail.saving": "保存中…",
     "detail.done": "完成",
     "detail.manage": "管理",
     "detail.favorite": "收藏",
@@ -269,18 +307,37 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     "detail.placeholderRemark": "输入笔记或备注...",
     "detail.regenerateAbstract": "重新生成摘要",
     "detail.regenerateToc": "重新生成目录",
-    "detail.generating": "生成中...",
+    "detail.generating": "生成中…",
     "detail.notAssignedShelf": "暂未加入任何书架，点击「管理」分配。",
     "agent.title": "学术研究助手",
     "agent.subtitle": "基于全文证据的深度分析",
     "agent.workspace": "工作区",
     "agent.newChat": "新对话",
-    "agent.thinking": "思考中...",
+    "agent.thinking": "思考中…",
     "agent.emptyHint": "我可以检索你的数字图书馆，阅读完整证据单元，并给出带引用的回答。",
     "agent.inputPlaceholder": "输入你的学术问题...",
     "agent.inputHelp": "按 Enter 发送 · Shift + Enter 换行 · 回答基于图书馆文献证据",
     "agent.copy": "复制",
     "agent.regenerate": "重新回答",
+    "agent.needKeyToast": "请先为该模型填入 API Key 再继续。",
+    "model.title": "模型与 API",
+    "model.provider": "模型提供方",
+    "model.model": "模型",
+    "model.customModel": "自定义模型 id…",
+    "model.customModelPlaceholder": "输入模型 id…",
+    "model.baseUrl": "Base URL",
+    "model.apiKey": "API Key",
+    "model.apiKeyPlaceholder": "粘贴 API Key…",
+    "model.serverKeyReady": "使用服务器内置 Key",
+    "model.needsKey": "该模型需要你的 API Key",
+    "model.keyHint": "仅在本浏览器会话保存，不会写入磁盘。",
+    "model.save": "保存",
+    "model.saved": "已保存",
+    "model.getKey": "获取 API Key",
+    "model.changeKey": "更换 Key",
+    "model.clearKey": "清除",
+    "model.openSettings": "打开模型设置",
+    "model.close": "关闭",
   },
 };
 

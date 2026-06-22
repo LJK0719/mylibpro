@@ -52,6 +52,7 @@
 
 /* ======= LIGHT THEME — warm library ======= */
 :root {
+  color-scheme: light;
   --radius: 0.75rem;
   --background: oklch(0.97 0.005 80);
   --foreground: oklch(0.18 0.02 60);
@@ -88,6 +89,7 @@
 
 /* ======= DARK THEME — deep academic ======= */
 .dark {
+  color-scheme: dark;
   --background: oklch(0.14 0.012 260);
   --foreground: oklch(0.92 0.01 260);
   --card: oklch(0.18 0.018 260);

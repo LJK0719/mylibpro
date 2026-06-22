@@ -40,6 +40,8 @@ import {
     createGeminiClient,
     callGemini,
     callOpenAICompatible,
+    callClaude,
+    PROVIDER_CATALOG,
 } from "@/lib/agent/providers";
 import {
     type WorkflowPhase,
@@ -135,8 +137,9 @@ export async function POST(req: NextRequest) {
     const agentConfig = resolveAgentConfig({ provider, apiKey, model, baseUrl });
 
     if (!agentConfig.apiKey) {
+        const envHint = PROVIDER_CATALOG[agentConfig.provider].apiKeyEnvHint;
         return new Response(
-            JSON.stringify({ error: `API Key is required. Configure ${agentConfig.provider === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY"} or set it in advanced settings.` }),
+            JSON.stringify({ error: `${PROVIDER_CATALOG[agentConfig.provider].label} 需要 API Key。请在模型选择器里填入 Key，或在服务端配置 ${envHint}。` }),
             { status: 400, headers: { "Content-Type": "application/json" } }
         );
     }
@@ -220,17 +223,27 @@ export async function POST(req: NextRequest) {
                     const phaseTools = getPhaseTools(phase);
                     const phaseHint = getPhaseHint(phase);
 
-                    if (agentConfig.provider === "openai") {
+                    if (agentConfig.provider !== "gemini") {
                         let response;
                         for (let retry = 0; retry < 3; retry++) {
                             try {
-                                response = await callOpenAICompatible({
-                                    config: agentConfig,
-                                    system: dynamicSystemPrompt + phaseHint,
-                                    messages: openAIContents,
-                                    tools: phaseTools,
-                                    sessionId,
-                                });
+                                if (agentConfig.provider === "claude") {
+                                    response = await callClaude({
+                                        config: agentConfig,
+                                        system: dynamicSystemPrompt + phaseHint,
+                                        messages: openAIContents,
+                                        tools: phaseTools,
+                                        sessionId,
+                                    });
+                                } else {
+                                    response = await callOpenAICompatible({
+                                        config: agentConfig,
+                                        system: dynamicSystemPrompt + phaseHint,
+                                        messages: openAIContents,
+                                        tools: phaseTools,
+                                        sessionId,
+                                    });
+                                }
                                 break;
                             } catch (retryErr: unknown) {
                                 const msg = retryErr instanceof Error ? retryErr.message : "";
@@ -245,7 +258,7 @@ export async function POST(req: NextRequest) {
                                     const waitMs = 5000 * (retry + 1);
                                     send({
                                         type: "status",
-                                        message: `OpenAI-compatible API rate limited. Retrying in ${Math.ceil(waitMs / 1000)}s (${retry + 1}/3)...`,
+                                        message: `${agentConfig.provider} API rate limited. Retrying in ${Math.ceil(waitMs / 1000)}s (${retry + 1}/3)...`,
                                     });
                                     await new Promise((r) => setTimeout(r, waitMs));
                                     continue;
@@ -255,7 +268,7 @@ export async function POST(req: NextRequest) {
                         }
 
                         if (!response) {
-                            send({ type: "error", error: "OpenAI-compatible API call failed after retries." });
+                            send({ type: "error", error: `${agentConfig.provider} API call failed after retries.` });
                             break;
                         }
 

@@ -11,7 +11,6 @@
 import type { ThinkingLevel } from "@google/genai";
 import {
     createGeminiClient,
-    normalizeOpenAIBaseUrl,
     resolveAgentConfig,
 } from "./providers";
 
@@ -28,6 +27,10 @@ const ZH_RE = /[㐀-鿿]/;
 
 function detectLocale(value: string): "zh" | "en" {
     return ZH_RE.test(value) ? "zh" : "en";
+}
+
+function hasCjk(value: string): boolean {
+    return ZH_RE.test(value);
 }
 
 function fieldGuidance(kind: TagFieldKind): string {
@@ -74,50 +77,88 @@ async function callJsonModel(input: AgentRequestOverrides & { prompt: string; sy
         throw new Error("Translation requires an LLM API key and model.");
     }
 
-    if (config.provider === "openai") {
-        const baseUrl = normalizeOpenAIBaseUrl(config.baseUrl || "https://api.openai.com/v1");
-        const res = await fetch(`${baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${config.apiKey}`,
+    // Gemini native SDK
+    if (config.provider === "gemini") {
+        const ai = createGeminiClient(config.apiKey);
+        const response = await ai.models.generateContent({
+            model: config.model,
+            contents: [{ role: "user", parts: [{ text: input.prompt }] }],
+            config: {
+                systemInstruction: input.system,
+                thinkingConfig: { thinkingLevel: "low" as ThinkingLevel },
+                responseMimeType: "application/json",
             },
-            body: JSON.stringify({
-                model: config.model,
-                messages: [
-                    { role: "system", content: input.system },
-                    { role: "user", content: input.prompt },
-                ],
-                response_format: { type: "json_object" },
-            }),
         });
-        if (!res.ok) {
-            const text = await res.text();
-            throw new Error(`Translation API error ${res.status}: ${text}`);
-        }
-        const data = await res.json();
-        const text = data.choices?.[0]?.message?.content;
-        if (typeof text !== "string" || !text.trim()) {
-            throw new Error("Translation API returned no text.");
+        const text = response.text;
+        if (!text?.trim()) {
+            throw new Error("Gemini API returned no text.");
         }
         return text.trim();
     }
 
-    const ai = createGeminiClient(config.apiKey);
-    const response = await ai.models.generateContent({
-        model: config.model,
-        contents: [{ role: "user", parts: [{ text: input.prompt }] }],
-        config: {
-            systemInstruction: input.system,
-            thinkingConfig: { thinkingLevel: "low" as ThinkingLevel },
-            responseMimeType: "application/json",
-        },
-    });
-    const text = response.text;
-    if (!text?.trim()) {
-        throw new Error("Gemini API returned no text.");
+    // Claude — native Anthropic Messages API
+    if (config.provider === "claude") {
+        const res = await fetch(`${config.baseUrl}/v1/messages`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": config.apiKey,
+                "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+                model: config.model,
+                max_tokens: 2048,
+                system: input.system,
+                messages: [
+                    { role: "user", content: [{
+                        type: "text",
+                        text: input.prompt + "\n\nReply with valid JSON only, no markdown fences, no prose.",
+                    }]},
+                ],
+            }),
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Claude Translation API error ${res.status}: ${text}`);
+        }
+        const data = await res.json();
+        const textBlocks = (data.content || [])
+            .filter((b: { type: string }) => b.type === "text")
+            .map((b: { text: string }) => b.text)
+            .join("");
+        if (!textBlocks.trim()) {
+            throw new Error("Claude API returned no text.");
+        }
+        return textBlocks.trim();
     }
-    return text.trim();
+
+    // OpenAI / DeepSeek — OpenAI-compatible /v1/chat/completions
+    const baseUrl = config.baseUrl;
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+            model: config.model,
+            messages: [
+                { role: "system", content: input.system },
+                { role: "user", content: input.prompt },
+            ],
+            response_format: { type: "json_object" },
+        }),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Translation API error ${res.status}: ${text}`);
+    }
+    const respData = await res.json();
+    const msgText = respData.choices?.[0]?.message?.content;
+    if (typeof msgText !== "string" || !msgText.trim()) {
+        throw new Error("Translation API returned no text.");
+    }
+    return msgText.trim();
 }
 
 function parseTranslationResult(raw: string, expected: number): { zh: string; en: string }[] | null {
@@ -146,8 +187,8 @@ function parseTranslationResult(raw: string, expected: number): { zh: string; en
  * Resolve the bilingual form of `base` items, preserving any prior translations
  * passed in via `existingZh` / `existingEn`. For items where the prior locale
  * value is missing or equal to the base value (i.e. never translated), the LLM
- * fills in the missing side. On any failure we fall back to the input value
- * itself for both locales — never block the user's edit.
+ * fills in the missing side. On failure we return the best aligned arrays plus
+ * an error; callers should avoid persisting them as authoritative translations.
  */
 export async function syncBilingualTags(opts: {
     kind: TagFieldKind;
@@ -160,7 +201,13 @@ export async function syncBilingualTags(opts: {
 
     const zh: string[] = [];
     const en: string[] = [];
-    const pending: { index: number; value: string; sourceLocale: "zh" | "en" }[] = [];
+    const pending: {
+        index: number;
+        value: string;
+        sourceLocale: "zh" | "en";
+        needsZh: boolean;
+        needsEn: boolean;
+    }[] = [];
 
     for (let i = 0; i < base.length; i++) {
         const value = base[i];
@@ -179,7 +226,7 @@ export async function syncBilingualTags(opts: {
         if (sourceLocale === "en" && !priorEn) en[i] = value;
 
         if (needsZh || needsEn) {
-            pending.push({ index: i, value, sourceLocale });
+            pending.push({ index: i, value, sourceLocale, needsZh, needsEn });
         }
     }
 
@@ -208,8 +255,24 @@ export async function syncBilingualTags(opts: {
         }
 
         for (let k = 0; k < pending.length; k++) {
-            const { index } = pending[k];
+            const { index, value, needsZh, needsEn } = pending[k];
             const result = parsed[k];
+            if (needsZh && !result.zh) {
+                return {
+                    zh: zh.map((v, i) => v || base[i]),
+                    en: en.map((v, i) => v || base[i]),
+                    translated: 0,
+                    error: `Missing Chinese translation for "${value}".`,
+                };
+            }
+            if (needsEn && (!result.en || hasCjk(result.en))) {
+                return {
+                    zh: zh.map((v, i) => v || base[i]),
+                    en: en.map((v, i) => v || base[i]),
+                    translated: 0,
+                    error: `Missing English translation for "${value}".`,
+                };
+            }
             if (result.zh) zh[index] = result.zh;
             if (result.en) en[index] = result.en;
         }

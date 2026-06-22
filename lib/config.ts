@@ -81,6 +81,55 @@ export const agentEnv = {
         );
     },
 
+    // DeepSeek (DEEPSEEK_* / LLM_*)
+    get deepseekBaseUrl(): string | undefined {
+        return (
+            process.env.DEEPSEEK_BASE_URL ||
+            process.env.LLM_BASE_URL ||
+            undefined
+        );
+    },
+    get deepseekApiKey(): string | undefined {
+        return (
+            process.env.DEEPSEEK_API_KEY ||
+            process.env.LLM_API_KEY ||
+            undefined
+        );
+    },
+    get deepseekModel(): string | undefined {
+        return (
+            process.env.DEEPSEEK_MODEL ||
+            process.env.LLM_MODEL ||
+            undefined
+        );
+    },
+
+    // Claude / Anthropic (CLAUDE_* / ANTHROPIC_* / LLM_*)
+    get claudeBaseUrl(): string | undefined {
+        return (
+            process.env.CLAUDE_BASE_URL ||
+            process.env.ANTHROPIC_BASE_URL ||
+            process.env.LLM_BASE_URL ||
+            undefined
+        );
+    },
+    get claudeApiKey(): string | undefined {
+        return (
+            process.env.CLAUDE_API_KEY ||
+            process.env.ANTHROPIC_API_KEY ||
+            process.env.LLM_API_KEY ||
+            undefined
+        );
+    },
+    get claudeModel(): string | undefined {
+        return (
+            process.env.CLAUDE_MODEL ||
+            process.env.ANTHROPIC_MODEL ||
+            process.env.LLM_MODEL ||
+            undefined
+        );
+    },
+
     // Context cache
     get contextCacheEnabled(): boolean {
         return process.env.AGENT_CONTEXT_CACHE_ENABLED === "true";

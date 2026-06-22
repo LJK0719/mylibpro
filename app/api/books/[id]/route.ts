@@ -90,7 +90,6 @@ export async function PATCH(
     // items. The LLM result becomes the authoritative `*_zh` / `*_en` for both the
     // SQLite update and the metadata.json sync below.
     const synced: Partial<Record<TagFieldKind, { base: string[]; zh: string[]; en: string[] }>> = {};
-    let translationError: string | undefined;
 
     for (const field of TAG_FIELDS) {
         if (patch[field] === undefined) continue;
@@ -116,7 +115,15 @@ export async function PATCH(
             existingEn: seedEn,
             overrides,
         });
-        if (result.error && !translationError) translationError = result.error;
+        if (result.error) {
+            return NextResponse.json(
+                {
+                    error: `Failed to translate ${field} tags: ${result.error}`,
+                    field,
+                },
+                { status: 502 }
+            );
+        }
         synced[field] = { base: newBase, zh: result.zh, en: result.en };
     }
 
@@ -169,5 +176,5 @@ export async function PATCH(
     }
 
     const updatedRow = getDocumentViewById(id);
-    return NextResponse.json({ ...updatedRow, translationWarning: translationError });
+    return NextResponse.json(updatedRow);
 }

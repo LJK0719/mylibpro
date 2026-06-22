@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { ThinkingLevel } from "@google/genai";
-import { createGeminiClient, normalizeOpenAIBaseUrl, resolveAgentConfig } from "@/lib/agent/providers";
+import { createGeminiClient, resolveAgentConfig } from "@/lib/agent/providers";
 import { getDataRoot } from "@/lib/config";
 import type { DocumentRecord } from "@/lib/db";
 import {
@@ -80,57 +80,88 @@ async function callTextModel(input: {
 }) {
     const config = resolveAgentConfig(input);
     if (!config.apiKey) {
-        throw new Error(`API Key is required. Configure ${config.provider === "openai" ? "OPENAI_API_KEY" : "GEMINI_API_KEY"} or set it in advanced settings.`);
+        throw new Error("API Key is required. Configure the API key or set it in advanced settings.");
     }
     if (!config.model) {
         throw new Error("Model name is required. Configure the model env var or set it in advanced settings.");
     }
 
-    if (config.provider === "openai") {
-        const baseUrl = normalizeOpenAIBaseUrl(config.baseUrl || "https://api.openai.com/v1");
-        const res = await fetch(`${baseUrl}/chat/completions`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${config.apiKey}`,
+    // Gemini — native SDK
+    if (config.provider === "gemini") {
+        const ai = createGeminiClient(config.apiKey);
+        const response = await ai.models.generateContent({
+            model: config.model,
+            contents: [{ role: "user", parts: [{ text: input.prompt }] }],
+            config: {
+                systemInstruction: input.system,
+                thinkingConfig: { thinkingLevel: "high" as ThinkingLevel },
             },
-            body: JSON.stringify({
-                model: config.model,
-                messages: [
-                    { role: "system", content: input.system },
-                    { role: "user", content: input.prompt },
-                ],
-            }),
         });
-
-        if (!res.ok) {
-            const text = await res.text();
-            throw new Error(`OpenAI-compatible API error ${res.status}: ${text}`);
-        }
-
-        const data = await res.json();
-        const text = data.choices?.[0]?.message?.content;
-        if (typeof text !== "string" || !text.trim()) {
-            throw new Error("OpenAI-compatible API returned no text.");
+        const text = response.text;
+        if (!text?.trim()) {
+            throw new Error("Gemini API returned no text.");
         }
         return text.trim();
     }
 
-    const ai = createGeminiClient(config.apiKey);
-    const response = await ai.models.generateContent({
-        model: config.model,
-        contents: [{ role: "user", parts: [{ text: input.prompt }] }],
-        config: {
-            systemInstruction: input.system,
-            thinkingConfig: { thinkingLevel: "high" as ThinkingLevel },
+    // Claude — native Anthropic Messages API
+    if (config.provider === "claude") {
+        const res = await fetch(`${config.baseUrl}/v1/messages`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "x-api-key": config.apiKey,
+                "anthropic-version": "2023-06-01",
+            },
+            body: JSON.stringify({
+                model: config.model,
+                max_tokens: 4096,
+                system: input.system,
+                messages: [{ role: "user", content: input.prompt }],
+            }),
+        });
+        if (!res.ok) {
+            throw new Error(`Claude API error ${res.status}: ${await res.text()}`);
+        }
+        const data = await res.json();
+        const textBlocks = (data.content || [])
+            .filter((b: { type: string }) => b.type === "text")
+            .map((b: { text: string }) => b.text)
+            .join("");
+        if (!textBlocks.trim()) {
+            throw new Error("Claude API returned no text.");
+        }
+        return textBlocks.trim();
+    }
+
+    // OpenAI / DeepSeek — OpenAI-compatible /v1/chat/completions
+    const baseUrl = config.baseUrl;
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${config.apiKey}`,
         },
+        body: JSON.stringify({
+            model: config.model,
+            messages: [
+                { role: "system", content: input.system },
+                { role: "user", content: input.prompt },
+            ],
+        }),
     });
 
-    const text = response.text;
-    if (!text?.trim()) {
-        throw new Error("Gemini API returned no text.");
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`API error ${res.status}: ${text}`);
     }
-    return text.trim();
+
+    const respData = await res.json();
+    const msgText = respData.choices?.[0]?.message?.content;
+    if (typeof msgText !== "string" || !msgText.trim()) {
+        throw new Error("API returned no text.");
+    }
+    return msgText.trim();
 }
 
 function parseTocDetection(raw: string): { has_toc: boolean; toc: string } | null {

@@ -8,7 +8,8 @@ import { CoverImage } from "@/components/library/CoverImage";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Heart, Download, X, Check, Pencil, RefreshCw } from "lucide-react";
-import { loadSettings } from "@/lib/agent/storage";
+import { useAgentSettings } from "@/lib/agent/useAgentSettings";
+import { ModelSelector } from "@/components/agent/ModelSelector";
 import type { DocumentView, Bookshelf } from "@/lib/types/library";
 import { useLanguage } from "@/components/common/LanguageProvider";
 import { pickArray, pickText } from "@/lib/i18n";
@@ -131,6 +132,8 @@ export default function BookDetailPageClient({
 }) {
     const { language, t } = useLanguage();
     const { id } = use(params);
+    const agentSettings = useAgentSettings();
+    const [modelOpen, setModelOpen] = useState(false);
     const [doc, setDoc] = useState<DocumentView | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -170,26 +173,18 @@ export default function BookDetailPageClient({
     const updateDoc = async (updates: Partial<DocumentView>) => {
         try {
             setIsSaving(true);
-            // For tag-array edits, forward the configured LLM settings so the server
-            // can ask the model to fill the missing locale (zh ↔ en) for newly-added
-            // items. Non-tag edits ignore these fields.
-            const settings = loadSettings();
-            const payload: Record<string, unknown> = {
-                ...updates,
-                provider: settings.provider,
-                model: settings.model,
-                baseUrl: settings.provider === "openai" ? settings.baseUrl : undefined,
-            };
             const r = await fetch(`/api/books/${encodeURIComponent(id)}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
+                // Overrides authenticate the LLM call that syncs bilingual tag
+                // translations (server only uses them for tag-array fields).
+                body: JSON.stringify({ ...updates, ...agentSettings.requestOverrides() }),
             });
-            if (!r.ok) throw new Error("Failed to update");
-            const updated = await r.json();
-            if (updated.translationWarning) {
-                console.warn("Tag translation skipped:", updated.translationWarning);
+            if (!r.ok) {
+                const data = await r.json().catch(() => null);
+                throw new Error(data?.error || "Failed to update");
             }
+            const updated = await r.json();
             setDoc(updated);
             if ('remark' in updates) {
                 setEditRemark(updated.remark);
@@ -203,18 +198,17 @@ export default function BookDetailPageClient({
     };
 
     const regenerateField = async (field: "abstract" | "toc") => {
+        if (agentSettings.needsKey) {
+            // Open the picker so the user can supply a key for this provider.
+            setModelOpen(true);
+            return;
+        }
         try {
             setRegeneratingField(field);
-            const settings = loadSettings();
             const r = await fetch(`/api/books/${encodeURIComponent(id)}/regenerate`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    field,
-                    provider: settings.provider,
-                    model: settings.model,
-                    baseUrl: settings.provider === "openai" ? settings.baseUrl : undefined,
-                }),
+                body: JSON.stringify({ field, ...agentSettings.requestOverrides() }),
             });
 
             const data = await r.json();
@@ -283,14 +277,23 @@ export default function BookDetailPageClient({
 
     return (
         <div className="max-w-5xl mx-auto px-6 py-8">
-            {/* Breadcrumb */}
-            <nav className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
-                <Link href="/" className="hover:text-foreground transition-colors">
-                    {t("detail.library")}
-                </Link>
-                <span>/</span>
-                <span className="text-foreground/70 truncate max-w-[300px]">{title}</span>
-            </nav>
+            {/* Breadcrumb + model control (governs Regenerate & tag translation) */}
+            <div className="flex items-center justify-between gap-3 mb-6">
+                <nav className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
+                    <Link href="/" className="hover:text-foreground transition-colors">
+                        {t("detail.library")}
+                    </Link>
+                    <span aria-hidden="true">/</span>
+                    <span className="text-foreground/70 truncate max-w-[300px]">{title}</span>
+                </nav>
+                <ModelSelector
+                    settings={agentSettings}
+                    open={modelOpen}
+                    onOpenChange={setModelOpen}
+                    align="end"
+                    className="flex-shrink-0"
+                />
+            </div>
 
             <div className="flex flex-col lg:flex-row gap-8">
                 {/* Left: PDF cover */}

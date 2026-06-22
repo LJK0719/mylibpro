@@ -12,10 +12,10 @@ import {
     upsertConversation,
     deleteConversation as deleteConv,
     clearAllConversations,
-    loadSettings,
-    saveSettings,
     type ChatConversation,
 } from "@/lib/agent/storage";
+import { useAgentSettings } from "@/lib/agent/useAgentSettings";
+import { ModelSelector } from "@/components/agent/ModelSelector";
 import { useLanguage } from "@/components/common/LanguageProvider";
 
 interface WorkspaceSnapshot {
@@ -57,14 +57,13 @@ interface WorkspaceSnapshot {
     };
 }
 
-type AgentProvider = "gemini" | "openai";
-
 function newSessionId(): string {
     return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export default function AgentPageClient() {
     const { t } = useLanguage();
+    const settings = useAgentSettings();
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [sessionId, setSessionId] = useState<string>("");
@@ -72,28 +71,16 @@ export default function AgentPageClient() {
     const [showWorkspace, setShowWorkspace] = useState(false);
     const [showHistory, setShowHistory] = useState(true);
     const [conversations, setConversations] = useState<ChatConversation[]>([]);
-
-    const [apiKey, setApiKey] = useState("");
-    const [model, setModel] = useState("gemini-3.1-flash-lite-preview");
-    const [provider, setProvider] = useState<AgentProvider>("gemini");
-    const [baseUrl, setBaseUrl] = useState("");
-    const [hasEnvKey, setHasEnvKey] = useState(false);
-    const [showAdvanced, setShowAdvanced] = useState(false);
+    const [modelOpen, setModelOpen] = useState(false);
 
     const [hydrated, setHydrated] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
 
-    // ─── Restore from localStorage on first mount ────────────────
+    // ─── Restore conversations from localStorage on first mount ──────
     useEffect(() => {
         const list = loadConversations();
         const activeId = loadActiveId();
-        const settings = loadSettings();
-
-        if (settings.provider) setProvider(settings.provider);
-        if (settings.model) setModel(settings.model);
-        if (settings.baseUrl) setBaseUrl(settings.baseUrl);
-
         setConversations(list);
 
         const active = activeId ? list.find((c) => c.id === activeId) : null;
@@ -108,25 +95,6 @@ export default function AgentPageClient() {
         }
         setHydrated(true);
     }, []);
-
-    useEffect(() => {
-        fetch("/api/agent/config")
-            .then((r) => r.json())
-            .then((config) => {
-                // Don't clobber user's restored settings unless they're empty.
-                setHasEnvKey(Boolean(config.hasApiKey));
-                setProvider((curr) => curr || config.provider || "gemini");
-                setModel((curr) => curr || config.model || "gemini-3.1-flash-lite-preview");
-                setBaseUrl((curr) => curr || config.baseUrl || "");
-            })
-            .catch(console.error);
-    }, []);
-
-    // Persist settings (without api key) whenever they change.
-    useEffect(() => {
-        if (!hydrated) return;
-        saveSettings({ provider, apiKey: "", model, baseUrl });
-    }, [hydrated, provider, model, baseUrl]);
 
     // Persist active conversation snapshot whenever messages or workspace change.
     useEffect(() => {
@@ -154,12 +122,13 @@ export default function AgentPageClient() {
             historyMessages: Message[],
             replaceAgentId?: string,
         ) => {
-            if (!hasEnvKey && !apiKey.trim()) {
-                alert("Please configure an API key in .env.local or advanced settings.");
+            if (settings.needsKey) {
+                // Surface the model picker so the user can supply a key.
+                setModelOpen(true);
                 return;
             }
-            if (!model.trim()) {
-                alert("Please set a model name.");
+            if (!settings.model.trim()) {
+                setModelOpen(true);
                 return;
             }
 
@@ -199,10 +168,7 @@ export default function AgentPageClient() {
                         message: userText,
                         sessionId,
                         history,
-                        provider,
-                        apiKey: apiKey.trim() || undefined,
-                        model: model.trim(),
-                        baseUrl: provider === "openai" ? baseUrl.trim() : undefined,
+                        ...settings.requestOverrides(),
                     }),
                     signal: abortRef.current.signal,
                 });
@@ -343,7 +309,7 @@ export default function AgentPageClient() {
                 abortRef.current = null;
             }
         },
-        [sessionId, provider, apiKey, model, baseUrl, hasEnvKey],
+        [sessionId, settings],
     );
 
     const handleSend = useCallback(
@@ -502,19 +468,12 @@ export default function AgentPageClient() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <div className="hidden md:flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-background/70">
-                            <span className={`w-1.5 h-1.5 rounded-full ${hasEnvKey || apiKey ? "bg-emerald-500" : "bg-amber-500"}`} />
-                            <span className="text-xs text-muted-foreground">
-                                {provider === "openai" ? "OpenAI-compatible" : "Gemini"} · {model}
-                            </span>
-                        </div>
-                        <button
-                            onClick={() => setShowAdvanced(!showAdvanced)}
-                            className={`view-btn ${showAdvanced ? "active" : ""}`}
-                            title="Advanced settings"
-                        >
-                            <span className="text-xs">Advanced</span>
-                        </button>
+                        <ModelSelector
+                            settings={settings}
+                            open={modelOpen}
+                            onOpenChange={setModelOpen}
+                            align="end"
+                        />
                         <div className="w-px h-6 bg-border mx-1"></div>
                         <button
                             onClick={() => setShowWorkspace(!showWorkspace)}
@@ -536,59 +495,6 @@ export default function AgentPageClient() {
                         </button>
                     </div>
                 </div>
-
-                {showAdvanced && (
-                    <div className="px-6 py-3 border-b border-border/40 bg-muted/20">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 max-w-5xl">
-                            <select
-                                value={provider}
-                                onChange={(e) => {
-                                    const nextProvider = e.target.value as AgentProvider;
-                                    setProvider(nextProvider);
-                                    if (nextProvider === "openai" && !baseUrl) {
-                                        setBaseUrl("https://api.openai.com/v1");
-                                    }
-                                    if (nextProvider === "openai" && model.startsWith("gemini")) {
-                                        setModel("gpt-4.1-mini");
-                                    }
-                                    if (nextProvider === "gemini" && !model.startsWith("gemini")) {
-                                        setModel("gemini-3.1-flash-lite-preview");
-                                    }
-                                }}
-                                className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                            >
-                                <option value="gemini">Gemini</option>
-                                <option value="openai">OpenAI-compatible</option>
-                            </select>
-                            <input
-                                type="text"
-                                placeholder={provider === "openai" ? "Model, e.g. gpt-4.1-mini" : "Model, e.g. gemini-3.1-flash-lite-preview"}
-                                value={model}
-                                onChange={(e) => setModel(e.target.value)}
-                                className="h-8 px-3 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                            {provider === "openai" && (
-                                <input
-                                    type="text"
-                                    placeholder="Base URL, e.g. https://api.openai.com/v1"
-                                    value={baseUrl}
-                                    onChange={(e) => setBaseUrl(e.target.value)}
-                                    className="h-8 px-3 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                                />
-                            )}
-                            <input
-                                type="password"
-                                placeholder={hasEnvKey ? "Optional API key override" : "API key"}
-                                value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                                className="h-8 px-3 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                        </div>
-                        <p className="text-[10px] text-muted-foreground mt-2">
-                            Defaults are loaded from .env.local; values here only override this chat request. API keys are never written to localStorage.
-                        </p>
-                    </div>
-                )}
 
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto px-6 py-4 chat-scroll">

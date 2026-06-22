@@ -2,7 +2,7 @@
  * Provider-facing types shared across Gemini and OpenAI-compatible adapters.
  */
 
-export type AgentProvider = "gemini" | "openai";
+export type AgentProvider = "gemini" | "openai" | "claude" | "deepseek";
 
 export interface AgentConfig {
     provider: AgentProvider;

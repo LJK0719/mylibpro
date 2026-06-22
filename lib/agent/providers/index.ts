@@ -7,10 +7,19 @@
 
 export * from "./types";
 export {
+    PROVIDER_CATALOG,
+    PROVIDER_ORDER,
+    asProvider,
+    type ProviderMeta,
+    type ProviderModel,
+} from "./catalog";
+export {
     normalizeProvider,
     envProvider,
     normalizeOpenAIBaseUrl,
     resolveAgentConfig,
+    resolveAllProviders,
+    type ProviderAvailability,
 } from "./resolve";
 export {
     toOpenAITools,
@@ -21,3 +30,4 @@ export {
     callGemini,
     type GeminiCallInput,
 } from "./gemini";
+export { callClaude } from "./claude";

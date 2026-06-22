@@ -85,16 +85,24 @@ function localizedArrayFrom(
   const explicitEn = parseStringArray(enSource);
   const explicitZh = parseStringArray(zhSource);
 
-  const en = explicitEn.length
-    ? explicitEn
-    : translateKnown
-      ? base.map((item) => translateLabel(item).en)
-      : base;
-  const zh = explicitZh.length
-    ? explicitZh
-    : translateKnown
-      ? base.map((item) => translateLabel(item).zh)
-      : base;
+  if (!base.length) {
+    return { en: explicitEn, zh: explicitZh };
+  }
+
+  const en = base.map((item, index) =>
+    explicitEn.length === base.length && explicitEn[index]
+      ? explicitEn[index]
+      : translateKnown
+        ? translateLabel(item).en
+        : item
+  );
+  const zh = base.map((item, index) =>
+    explicitZh.length === base.length && explicitZh[index]
+      ? explicitZh[index]
+      : translateKnown
+        ? translateLabel(item).zh
+        : item
+  );
 
   return { en, zh };
 }

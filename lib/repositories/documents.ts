@@ -62,13 +62,13 @@ export function listDocuments(input: ListDocumentsInput): ListDocumentsResult {
         const disciplineClauses = disciplineSearchTerms(input.discipline).map((term, index) => {
             const key = `discipline${index}`;
             params[key] = `%${term}%`;
-            return `d.discipline LIKE @${key}`;
+            return `(d.discipline LIKE @${key} OR d.discipline_zh LIKE @${key} OR d.discipline_en LIKE @${key})`;
         });
         conditions.push(`(${disciplineClauses.join(" OR ")})`);
     }
 
     if (input.subdiscipline) {
-        conditions.push(`d.subdiscipline LIKE @subdiscipline`);
+        conditions.push(`(d.subdiscipline LIKE @subdiscipline OR d.subdiscipline_zh LIKE @subdiscipline OR d.subdiscipline_en LIKE @subdiscipline)`);
         params.subdiscipline = `%${input.subdiscipline}%`;
     }
 
@@ -371,6 +371,10 @@ export interface FilterOption {
     };
 }
 
+function localizedFilterKey(label: { en: string; zh: string }): string {
+    return `${label.en.trim().toLocaleLowerCase()}|${label.zh.trim().toLocaleLowerCase()}`;
+}
+
 export function getDisciplineFilters() {
     const db = getDb();
     const rows = db
@@ -387,26 +391,33 @@ export function getDisciplineFilters() {
     const disciplineMap = new Map<string, FilterOption>();
     const subdisciplineMap = new Map<string, FilterOption>();
     for (const row of rows) {
-        const dArr: string[] = JSON.parse(row.discipline || "[]");
-        const dZhArr: string[] = JSON.parse(row.discipline_zh || "[]");
-        const dEnArr: string[] = JSON.parse(row.discipline_en || "[]");
+        const i18n = normalizeMetadataI18n(row as unknown as Record<string, unknown>);
+        const dArr = parseStringArray(row.discipline);
         for (const [index, d] of dArr.entries()) {
-            if (!disciplineMap.has(d)) {
-                disciplineMap.set(d, {
-                    value: d,
-                    label: { en: dEnArr[index] || d, zh: dZhArr[index] || d },
+            const label = {
+                en: i18n.discipline.en[index] || d,
+                zh: i18n.discipline.zh[index] || d,
+            };
+            const key = localizedFilterKey(label);
+            if (!disciplineMap.has(key)) {
+                disciplineMap.set(key, {
+                    value: label.en || label.zh || d,
+                    label,
                 });
             }
         }
 
-        const sArr: string[] = JSON.parse(row.subdiscipline || "[]");
-        const sZhArr: string[] = JSON.parse(row.subdiscipline_zh || "[]");
-        const sEnArr: string[] = JSON.parse(row.subdiscipline_en || "[]");
+        const sArr = parseStringArray(row.subdiscipline);
         for (const [index, s] of sArr.entries()) {
-            if (!subdisciplineMap.has(s)) {
-                subdisciplineMap.set(s, {
-                    value: s,
-                    label: { en: sEnArr[index] || s, zh: sZhArr[index] || s },
+            const label = {
+                en: i18n.subdiscipline.en[index] || s,
+                zh: i18n.subdiscipline.zh[index] || s,
+            };
+            const key = localizedFilterKey(label);
+            if (!subdisciplineMap.has(key)) {
+                subdisciplineMap.set(key, {
+                    value: label.en || label.zh || s,
+                    label,
                 });
             }
         }
