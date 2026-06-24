@@ -393,7 +393,9 @@ export function getDisciplineFilters() {
         }[];
 
     const disciplineMap = new Map<string, FilterOption>();
+    const disciplineValues = new Set<string>();
     const subdisciplineMap = new Map<string, FilterOption>();
+    const subdisciplineValues = new Set<string>();
     for (const row of rows) {
         const i18n = normalizeMetadataI18n(row as unknown as Record<string, unknown>);
         const dArr = parseStringArray(row.discipline);
@@ -403,11 +405,10 @@ export function getDisciplineFilters() {
                 zh: i18n.discipline.zh[index] || d,
             };
             const key = localizedFilterKey(label);
-            if (!disciplineMap.has(key)) {
-                disciplineMap.set(key, {
-                    value: label.en || label.zh || d,
-                    label,
-                });
+            const value = label.en || label.zh || d;
+            if (!disciplineMap.has(key) && !disciplineValues.has(value)) {
+                disciplineValues.add(value);
+                disciplineMap.set(key, { value, label });
             }
         }
 
@@ -418,11 +419,10 @@ export function getDisciplineFilters() {
                 zh: i18n.subdiscipline.zh[index] || s,
             };
             const key = localizedFilterKey(label);
-            if (!subdisciplineMap.has(key)) {
-                subdisciplineMap.set(key, {
-                    value: label.en || label.zh || s,
-                    label,
-                });
+            const value = label.en || label.zh || s;
+            if (!subdisciplineMap.has(key) && !subdisciplineValues.has(value)) {
+                subdisciplineValues.add(value);
+                subdisciplineMap.set(key, { value, label });
             }
         }
     }
@@ -508,8 +508,10 @@ export function upsertImportedDocuments(records: Record<string, unknown>[]) {
                 subdiscipline_en: JSON.stringify(i18n.subdiscipline.en),
                 keywords_zh: JSON.stringify(i18n.keywords.zh),
                 keywords_en: JSON.stringify(i18n.keywords.en),
+                abstract: typeof rec.abstract === "string" ? rec.abstract : String(rec.abstract || ""),
                 abstract_zh: i18n.abstract.zh,
                 abstract_en: i18n.abstract.en,
+                toc: typeof rec.toc === "string" ? rec.toc : String(rec.toc || ""),
                 toc_zh: i18n.toc.zh,
                 toc_en: i18n.toc.en,
                 search_text: buildSearchText(
