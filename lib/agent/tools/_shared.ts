@@ -16,15 +16,12 @@ import type { DocumentView } from "../../db";
 export const DATA_ROOT = getDataRoot();
 
 /**
- * Normalize a `full_text_path` field that may have a `library/` prefix
- * left over from older import scripts.
+ * Resolve a document's `full_text_path` (relative to DATA_ROOT).
+ * Paths are canonical (`<type>/<folder>/parsed/full_text.md`); the legacy
+ * `library/` prefix is still tolerated for forward-compat with old DBs.
  */
 export function resolveFullTextPath(view: DocumentView): string {
-    let ftPath = view.full_text_path;
-    if (ftPath.startsWith("library/")) {
-        ftPath = ftPath.replace(/^library\//, "");
-    }
-    return ftPath;
+    return (view.full_text_path || "").replace(/^library\//, "");
 }
 
 export function joinDataPath(...segments: string[]): string {

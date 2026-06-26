@@ -10,6 +10,38 @@ import type { DocumentMetadataI18n } from "@/lib/i18n";
 
 export type DocumentStatus = 'unread' | 'reading' | 'read';
 
+/** Author with optional structured detail (paper/book type-specific). */
+export interface AuthorDetail {
+  name?: string;
+  affiliation?: string;
+  orcid?: string;
+}
+
+/** Paper-specific bibliographic block (journal article / preprint / thesis / chapter). */
+export interface BibliographicInfo {
+  container?: string | null;        // journal / conference / book title
+  container_type?: string | null;   // journal | conference | preprint | thesis | book_chapter | report | working_paper
+  volume?: string | null;
+  issue?: string | null;
+  pages?: string | null;
+  publisher?: string | null;
+  doi?: string | null;
+  url?: string | null;
+  jstor?: string | null;
+  arxiv?: string | null;
+  note?: string | null;
+  authors_detailed?: AuthorDetail[];
+}
+
+/** Book-specific block. */
+export interface BookInfo {
+  publisher?: string | null;
+  isbn?: string | null;
+  edition?: string | null;
+  series?: string | null;
+  pages?: number | null;
+}
+
 export interface DocumentView {
   document_id: string;
   type: string;
@@ -50,6 +82,10 @@ export interface DocumentView {
   chapters: string[];
   /** Names of bookshelves this document belongs to. */
   shelves: string[];
+  /** Paper-specific bibliographic block (empty object for books). */
+  bibliographic: BibliographicInfo;
+  /** Book-specific block (empty object for papers). */
+  book: BookInfo;
 }
 
 export interface Bookshelf {

@@ -450,13 +450,15 @@ export function upsertImportedDocuments(records: Record<string, unknown>[]) {
           discipline, discipline_zh, discipline_en, subdiscipline, subdiscipline_zh, subdiscipline_en,
           keywords, keywords_zh, keywords_en, abstract, abstract_zh, abstract_en, toc, toc_zh, toc_en,
           full_text_path, token_count, indexed_date,
-          citation_info, remark, folder_name, status, is_favorite, chapters, search_text
+          citation_info, remark, folder_name, status, is_favorite, chapters, search_text,
+          bibliographic, book
         ) VALUES (
           @document_id, @type, @title, @title_zh, @title_en, @authors, @authors_zh, @authors_en, @year,
           @discipline, @discipline_zh, @discipline_en, @subdiscipline, @subdiscipline_zh, @subdiscipline_en,
           @keywords, @keywords_zh, @keywords_en, @abstract, @abstract_zh, @abstract_en, @toc, @toc_zh, @toc_en,
           @full_text_path, @token_count, @indexed_date,
-          @citation_info, @remark, @folder_name, @status, @is_favorite, @chapters, @search_text
+          @citation_info, @remark, @folder_name, @status, @is_favorite, @chapters, @search_text,
+          @bibliographic, @book
         ) ON CONFLICT(document_id) DO UPDATE SET
           type = excluded.type,
           title = excluded.title,
@@ -490,7 +492,9 @@ export function upsertImportedDocuments(records: Record<string, unknown>[]) {
           status = excluded.status,
           is_favorite = excluded.is_favorite,
           chapters = excluded.chapters,
-          search_text = excluded.search_text
+          search_text = excluded.search_text,
+          bibliographic = excluded.bibliographic,
+          book = excluded.book
     `);
 
     const insertMany = db.transaction((rows: Record<string, unknown>[]) => {
@@ -498,6 +502,8 @@ export function upsertImportedDocuments(records: Record<string, unknown>[]) {
             const i18n = normalizeMetadataI18n(rec);
             upsert.run({
                 ...rec,
+                bibliographic: typeof rec.bibliographic === "string" ? rec.bibliographic : JSON.stringify(rec.bibliographic ?? {}),
+                book: typeof rec.book === "string" ? rec.book : JSON.stringify(rec.book ?? {}),
                 title_zh: i18n.title.zh,
                 title_en: i18n.title.en,
                 authors_zh: JSON.stringify(i18n.authors.zh),

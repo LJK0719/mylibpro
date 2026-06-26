@@ -63,7 +63,9 @@ export function getDb(): Database.Database {
       is_favorite   INTEGER NOT NULL DEFAULT 0,
       chapters      TEXT NOT NULL DEFAULT '[]',
       shelves       TEXT NOT NULL DEFAULT '[]',
-      search_text   TEXT NOT NULL DEFAULT ''
+      search_text   TEXT NOT NULL DEFAULT '',
+      bibliographic TEXT NOT NULL DEFAULT '{}',
+      book          TEXT NOT NULL DEFAULT '{}'
     );
   `);
 
@@ -89,6 +91,8 @@ export function getDb(): Database.Database {
     ['abstract_en', `ALTER TABLE documents ADD COLUMN abstract_en TEXT NOT NULL DEFAULT '';`],
     ['toc_zh', `ALTER TABLE documents ADD COLUMN toc_zh TEXT NOT NULL DEFAULT '';`],
     ['toc_en', `ALTER TABLE documents ADD COLUMN toc_en TEXT NOT NULL DEFAULT '';`],
+    ['bibliographic', `ALTER TABLE documents ADD COLUMN bibliographic TEXT NOT NULL DEFAULT '{}';`],
+    ['book', `ALTER TABLE documents ADD COLUMN book TEXT NOT NULL DEFAULT '{}';`],
   ];
   for (const [col, sql] of migrations) {
     if (!cols.includes(col)) {
@@ -244,6 +248,8 @@ export interface DocumentRecord {
   chapters: string; // JSON array string of chapter file names
   search_text: string;
   shelves: string;  // JSON array string of shelf names this doc belongs to
+  bibliographic: string; // JSON object string (paper-specific)
+  book: string;          // JSON object string (book-specific)
 }
 
 export function recordToView(rec: DocumentRecord): DocumentView {
@@ -294,7 +300,19 @@ export function recordToView(rec: DocumentRecord): DocumentView {
     is_favorite: rec.is_favorite === 1,
     chapters: JSON.parse(rec.chapters || "[]"),
     shelves: JSON.parse(rec.shelves || "[]"),
+    bibliographic: safeParseObject(rec.bibliographic),
+    book: safeParseObject(rec.book),
   };
+}
+
+function safeParseObject(value: string | null | undefined): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 export interface BookshelfRecord {

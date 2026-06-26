@@ -1,5 +1,9 @@
 # MyLibPro as an External Brain — Usage Guide
 
+>apikey:mlp_live_fc7b2f0f26b22fa32f283851592ffc01371cde44
+>
+>保持明文存储
+
 Connect any AI agent to a curated academic library (textbooks & papers in
 mathematics, statistics, machine learning, finance, …) and use it as an
 **external brain**: search, navigate by structure, and pull exact source text

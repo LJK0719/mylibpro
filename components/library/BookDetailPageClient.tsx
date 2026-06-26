@@ -266,6 +266,28 @@ export default function BookDetailPageClient({
     const tocPreview = tocLines.slice(0, 20);
     const hasMoreToc = tocLines.length > 20;
 
+    // Type-specific publication info (paper -> bibliographic, book -> book)
+    const bib = (doc.bibliographic || {}) as Record<string, unknown>;
+    const bookInfo = (doc.book || {}) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === "string" && v.trim()) || (typeof v === "number" ? String(v) : "");
+    const pubItems: { label: string; value: string; href?: string }[] = [];
+    if (doc.type === "paper") {
+        if (str(bib.container)) pubItems.push({ label: t("detail.publishedIn"), value: str(bib.container) });
+        if (str(bib.volume)) pubItems.push({ label: t("detail.volume"), value: str(bib.volume) });
+        if (str(bib.issue)) pubItems.push({ label: t("detail.issue"), value: str(bib.issue) });
+        if (str(bib.pages)) pubItems.push({ label: t("detail.pages"), value: str(bib.pages) });
+        if (str(bib.publisher)) pubItems.push({ label: t("detail.publisher"), value: str(bib.publisher) });
+        if (str(bib.doi)) pubItems.push({ label: t("detail.doi"), value: str(bib.doi), href: `https://doi.org/${str(bib.doi)}` });
+        else if (str(bib.arxiv)) pubItems.push({ label: "arXiv", value: str(bib.arxiv), href: `https://arxiv.org/abs/${str(bib.arxiv)}` });
+        if (str(bib.url)) pubItems.push({ label: t("detail.link"), value: str(bib.url), href: str(bib.url) });
+    } else {
+        if (str(bookInfo.publisher)) pubItems.push({ label: t("detail.publisher"), value: str(bookInfo.publisher) });
+        if (str(bookInfo.series)) pubItems.push({ label: t("detail.series"), value: str(bookInfo.series) });
+        if (str(bookInfo.edition)) pubItems.push({ label: t("detail.edition"), value: str(bookInfo.edition) });
+        if (str(bookInfo.isbn)) pubItems.push({ label: t("detail.isbn"), value: str(bookInfo.isbn) });
+        if (str(bookInfo.pages)) pubItems.push({ label: t("detail.pages"), value: str(bookInfo.pages) });
+    }
+
     // Shelf helpers
     const docShelves: string[] = doc.shelves || [];
     const toggleShelf = async (shelfName: string) => {
@@ -387,6 +409,25 @@ export default function BookDetailPageClient({
                             </div>
                         ))}
                     </div>
+
+                    {/* Publication info — type-specific (paper: journal/DOI; book: publisher/ISBN) */}
+                    {pubItems.length > 0 && (
+                        <div className="mb-6">
+                            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t("detail.publication")}</h2>
+                            <dl className="rounded-lg border border-border/50 bg-muted/20 divide-y divide-border/40">
+                                {pubItems.map(({ label, value, href }) => (
+                                    <div key={label} className="flex gap-3 px-3 py-2 text-sm">
+                                        <dt className="w-28 flex-shrink-0 text-xs text-muted-foreground uppercase tracking-wider pt-0.5">{label}</dt>
+                                        <dd className="flex-1 min-w-0 break-words">
+                                            {href ? (
+                                                <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</a>
+                                            ) : value}
+                                        </dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        </div>
+                    )}
 
                     {/* Tags — editable */}
                     <div className="space-y-3 mb-6">

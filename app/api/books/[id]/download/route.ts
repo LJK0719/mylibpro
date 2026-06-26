@@ -14,10 +14,9 @@ function safeFileName(name: string, extension: string) {
 }
 
 function resolveMarkdownPath(row: DocumentRecord, dataRoot: string) {
-  let fullTextPath = row.full_text_path || "";
-  if (fullTextPath.startsWith("library/")) {
-    fullTextPath = fullTextPath.replace(/^library\//, "");
-  }
+  // Paths are canonical (`<type>/<folder>/parsed/full_text.md`); tolerate the
+  // legacy `library/` prefix for forward-compat with old DBs.
+  const fullTextPath = (row.full_text_path || "").replace(/^library\//, "");
 
   const candidates = [
     fullTextPath ? path.join(dataRoot, fullTextPath) : "",

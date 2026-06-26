@@ -65,6 +65,17 @@ type TranslationKey =
   | "detail.keywords"
   | "detail.abstract"
   | "detail.toc"
+  | "detail.publication"
+  | "detail.publishedIn"
+  | "detail.volume"
+  | "detail.issue"
+  | "detail.pages"
+  | "detail.publisher"
+  | "detail.isbn"
+  | "detail.edition"
+  | "detail.series"
+  | "detail.doi"
+  | "detail.link"
   | "detail.remark"
   | "detail.noAbstract"
   | "detail.noToc"
@@ -175,6 +186,17 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     "detail.length": "Length",
     "detail.indexedDate": "Indexed",
     "detail.keywords": "Keywords",
+    "detail.publication": "Publication",
+    "detail.publishedIn": "Published in",
+    "detail.volume": "Volume",
+    "detail.issue": "Issue",
+    "detail.pages": "Pages",
+    "detail.publisher": "Publisher",
+    "detail.isbn": "ISBN",
+    "detail.edition": "Edition",
+    "detail.series": "Series",
+    "detail.doi": "DOI",
+    "detail.link": "Link",
     "detail.abstract": "Abstract",
     "detail.toc": "Table of contents",
     "detail.remark": "Remark",
@@ -286,6 +308,17 @@ const TRANSLATIONS: Record<Language, Record<TranslationKey, string>> = {
     "detail.length": "篇幅",
     "detail.indexedDate": "索引日期",
     "detail.keywords": "关键词",
+    "detail.publication": "出版信息",
+    "detail.publishedIn": "发表于",
+    "detail.volume": "卷",
+    "detail.issue": "期",
+    "detail.pages": "页码",
+    "detail.publisher": "出版社",
+    "detail.isbn": "ISBN",
+    "detail.edition": "版次",
+    "detail.series": "丛书",
+    "detail.doi": "DOI",
+    "detail.link": "链接",
     "detail.abstract": "摘要",
     "detail.toc": "目录",
     "detail.remark": "备注",

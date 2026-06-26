@@ -41,8 +41,11 @@ export function executeGetDocumentDetail(
 
     const view: DocumentView = recordToView(row);
 
+    // `citation_info` is a path relative to DATA_ROOT (canonical:
+    // `<type>/<folder>/ref.txt`; legacy `library/` prefix tolerated).
+    // Resolve it to the file's contents for the agent.
     let citationText = view.citation_info;
-    if (citationText && citationText.startsWith("library/")) {
+    if (citationText) {
         const citePath = path.join(
             DATA_ROOT,
             citationText.replace(/^library\//, "")

@@ -81,6 +81,8 @@ export async function POST() {
                         status: meta.status || "unread",
                         is_favorite: meta.is_favorite ? 1 : 0,
                         chapters: JSON.stringify(chapters),
+                        bibliographic: JSON.stringify(meta.bibliographic || {}),
+                        book: JSON.stringify(meta.book || {}),
                     });
                 } catch (err) {
                     console.error(`Error reading ${folder.name}:`, err);

@@ -76,7 +76,9 @@ function initSchema(db: Database.Database) {
       is_favorite   INTEGER NOT NULL DEFAULT 0,
       chapters      TEXT NOT NULL DEFAULT '[]',
       shelves       TEXT NOT NULL DEFAULT '[]',
-      search_text   TEXT NOT NULL DEFAULT ''
+      search_text   TEXT NOT NULL DEFAULT '',
+      bibliographic TEXT NOT NULL DEFAULT '{}',
+      book          TEXT NOT NULL DEFAULT '{}'
     );
   `);
 
@@ -101,6 +103,8 @@ function initSchema(db: Database.Database) {
         ["abstract_en", `ALTER TABLE documents ADD COLUMN abstract_en TEXT NOT NULL DEFAULT '';`],
         ["toc_zh", `ALTER TABLE documents ADD COLUMN toc_zh TEXT NOT NULL DEFAULT '';`],
         ["toc_en", `ALTER TABLE documents ADD COLUMN toc_en TEXT NOT NULL DEFAULT '';`],
+        ["bibliographic", `ALTER TABLE documents ADD COLUMN bibliographic TEXT NOT NULL DEFAULT '{}';`],
+        ["book", `ALTER TABLE documents ADD COLUMN book TEXT NOT NULL DEFAULT '{}';`],
     ];
     for (const [col, sql] of migrations) {
         if (!cols.includes(col)) {
@@ -210,6 +214,8 @@ function buildRecord(folderName: string, type: string, meta: Record<string, unkn
         is_favorite: meta.is_favorite ? 1 : 0,
         chapters: JSON.stringify(chapters),
         shelves: JSON.stringify(meta.shelves || []),
+        bibliographic: JSON.stringify(meta.bibliographic || {}),
+        book: JSON.stringify(meta.book || {}),
     } satisfies Record<string, unknown>;
 }
 
@@ -235,13 +241,15 @@ function importOnce() {
       discipline, discipline_zh, discipline_en, subdiscipline, subdiscipline_zh, subdiscipline_en,
       keywords, keywords_zh, keywords_en, abstract, abstract_zh, abstract_en, toc, toc_zh, toc_en,
       full_text_path, token_count, indexed_date,
-      citation_info, remark, folder_name, status, is_favorite, chapters, shelves, search_text
+      citation_info, remark, folder_name, status, is_favorite, chapters, shelves, search_text,
+      bibliographic, book
     ) VALUES (
       @document_id, @type, @title, @title_zh, @title_en, @authors, @authors_zh, @authors_en, @year,
       @discipline, @discipline_zh, @discipline_en, @subdiscipline, @subdiscipline_zh, @subdiscipline_en,
       @keywords, @keywords_zh, @keywords_en, @abstract, @abstract_zh, @abstract_en, @toc, @toc_zh, @toc_en,
       @full_text_path, @token_count, @indexed_date,
-      @citation_info, @remark, @folder_name, @status, @is_favorite, @chapters, @shelves, @search_text
+      @citation_info, @remark, @folder_name, @status, @is_favorite, @chapters, @shelves, @search_text,
+      @bibliographic, @book
     ) ON CONFLICT(document_id) DO UPDATE SET
       type = excluded.type,
       title = excluded.title,
@@ -276,7 +284,9 @@ function importOnce() {
       is_favorite = excluded.is_favorite,
       chapters = excluded.chapters,
       shelves = excluded.shelves,
-      search_text = excluded.search_text
+      search_text = excluded.search_text,
+      bibliographic = excluded.bibliographic,
+      book = excluded.book
   `);
 
         let totalImported = 0;
